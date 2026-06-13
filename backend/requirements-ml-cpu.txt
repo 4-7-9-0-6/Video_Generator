@@ -1,0 +1,12 @@
+# Local CPU ML extras — FREE, no GPU. Powers musicgen_local (real music) and
+# xtts_local (voice cloning) on the CPU. Slower than a GPU, but $0 and fully local.
+# Best installed under Python 3.12 (the Docker cpu-ml image), since torch has no Python
+# 3.14 wheels yet. On the CPU box, generation takes minutes per clip — that's the tradeoff
+# for free. (Images stay on SD-Turbo and video on Ken Burns; those are the right CPU choices.)
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.4
+torchaudio>=2.4
+
+transformers>=4.44       # MusicGen
+coqui-tts>=0.24          # XTTS-v2 voice cloning (imports as `TTS`)

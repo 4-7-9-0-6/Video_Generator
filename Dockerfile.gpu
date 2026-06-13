@@ -1,0 +1,32 @@
+# ToonForge backend — GPU build. Based on the official PyTorch CUDA runtime image (torch +
+# CUDA 12.1 already inside), so we only add the inference libs. Run on an NVIDIA host with
+# the NVIDIA Container Toolkit (see docs/GPU_DEPLOY.md). Weights download from Hugging Face
+# on first use into the mounted HF cache volume.
+FROM pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/backend
+
+# core API deps + the GPU inference libs (torch already in the base image)
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir \
+        "diffusers>=0.32" "transformers>=4.44" "accelerate>=0.34" \
+        sentencepiece protobuf "imageio[ffmpeg]>=2.34" "coqui-tts>=0.24"
+
+COPY backend/ ./
+
+# GPU-phase provider selection (override per-capability in compose/.env as needed)
+ENV TOONFORGE_HOST=0.0.0.0 \
+    TOONFORGE_DATA_DIR=/app/backend/data \
+    HF_HOME=/app/backend/models/hf \
+    PROVIDER_IMAGE=flux_local \
+    PROVIDER_VIDEO=ltx_local \
+    PROVIDER_TTS=xtts_local \
+    PROVIDER_MUSIC=musicgen_local
+
+EXPOSE 8000
+ENTRYPOINT ["sh", "scripts/docker_entrypoint_gpu.sh"]

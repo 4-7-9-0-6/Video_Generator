@@ -1,0 +1,7 @@
+# Optional local ML extras (CPU). Best installed under Python 3.12 — some of these
+# do not yet publish wheels for Python 3.14. If an install fails, the matching
+# provider simply reports itself unavailable; the rest of the app keeps working.
+
+piper-tts>=1.2            # local CPU text-to-speech (EN + FR voices)
+faster-whisper>=1.0       # local CPU ASR + word-level timestamps for subtitles/alignment
+# musicgen / audiocraft intentionally omitted: too heavy for CPU-only here.

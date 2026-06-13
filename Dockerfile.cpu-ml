@@ -1,0 +1,30 @@
+# ToonForge backend — CPU build WITH local ML extras (MusicGen + XTTS voice clone) baked in.
+# Same Python 3.12 / offline stack as Dockerfile, plus torch-CPU + transformers + coqui-tts
+# so real music and voice cloning run LOCALLY and FREE (slower than a GPU — that's the trade).
+# Images stay on SD-Turbo and video on Ken Burns (the right CPU choices). Larger image (~5 GB).
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg libgomp1 ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/backend
+
+COPY backend/requirements.txt backend/requirements-ml.txt backend/requirements-ml-cpu.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-ml.txt \
+    && pip install --no-cache-dir -r requirements-ml-cpu.txt
+
+COPY backend/ ./
+RUN python scripts/install_sdcpp.py
+
+ENV TOONFORGE_HOST=0.0.0.0 \
+    TOONFORGE_DATA_DIR=/app/backend/data \
+    PIPER_MODELS_DIR=/app/backend/models/piper \
+    HF_HOME=/app/backend/models/hf \
+    PROVIDER_IMAGE=sdcpp \
+    PROVIDER_MUSIC=musicgen_local
+# Voice cloning is opt-in (slow per line): set PROVIDER_TTS=xtts_local when you want it.
+# Piper stays the default fast TTS.
+
+EXPOSE 8000
+ENTRYPOINT ["sh", "scripts/docker_entrypoint.sh"]

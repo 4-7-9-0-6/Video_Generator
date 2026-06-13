@@ -1,0 +1,11 @@
+# keep the build context lean
+**/.venv
+**/node_modules
+**/__pycache__
+**/.next
+backend/data
+backend/models
+backend/tools
+**/*.sqlite3
+.git
+**/.env

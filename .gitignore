@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Env & secrets
+.env
+*.local
+
+# Data / generated assets / db
+backend/data/
+*.sqlite3
+*.db
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+
+# Models (downloaded weights) + local tools (ffmpeg)
+backend/models/
+backend/tools/
+*.onnx
+*.ckpt
+*.safetensors
+
+# OS
+.DS_Store
+Thumbs.db

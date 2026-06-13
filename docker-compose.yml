@@ -1,0 +1,77 @@
+# ToonForge — local-first stack. Two backend profiles:
+#   docker compose --profile cpu up --build      # default: 100% offline CPU (SD-Turbo)
+#   docker compose --profile gpu up --build      # CUDA box: pre-wired for GPU providers
+#
+# Volumes keep your projects/assets/models on the host, so rebuilds don't re-download
+# the ~1.4 GB model or wipe your work.
+
+services:
+  backend:
+    profiles: ["cpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      PROVIDER_IMAGE: sdcpp            # local SD-Turbo, CPU, offline
+    volumes:
+      - ./backend/data:/app/backend/data
+      - ./backend/models:/app/backend/models
+
+  # CPU build + local ML extras: real MusicGen music (and optional XTTS voice clone) on the
+  # CPU — free, no GPU, just slower. Images stay SD-Turbo, video stays Ken Burns.
+  #   docker compose --profile cpu-ml up --build
+  backend-cpu-ml:
+    profiles: ["cpu-ml"]
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu-ml
+    ports:
+      - "8000:8000"
+    environment:
+      PROVIDER_IMAGE: sdcpp
+      PROVIDER_MUSIC: musicgen_local     # real AI music on CPU (free, slow)
+      # PROVIDER_TTS: xtts_local         # uncomment for voice cloning on CPU (slow per line)
+      # PROVIDER_CONSISTENCY: clip       # uncomment for the CLIP image IP-similarity guard (CPU)
+    volumes:
+      - ./backend/data:/app/backend/data
+      - ./backend/models:/app/backend/models   # HF weights cache in ./backend/models/hf
+
+  # CUDA build: real GPU providers (Flux images, LTX img->video, XTTS voice clone, MusicGen).
+  # Requires a physical NVIDIA GPU + the NVIDIA Container Toolkit (see docs/GPU_DEPLOY.md).
+  # Weights download from Hugging Face on first use into the mounted ./backend/models/hf cache.
+  backend-gpu:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    ports:
+      - "8000:8000"
+    environment:
+      PROVIDER_IMAGE: flux_local       # FLUX.1-schnell (Apache-2.0)
+      PROVIDER_VIDEO: ltx_local        # LTX-Video img->video (true animation)
+      PROVIDER_TTS: xtts_local         # XTTS-v2 voice cloning (non-commercial model license)
+      PROVIDER_MUSIC: musicgen_local   # MusicGen (non-commercial model license)
+      GPU_USD_PER_HOUR: "0.40"         # your rented-GPU rate, for the cost meter
+      # GPU_OFFLOAD: "1"               # set on 12-16 GB cards (slower, fits less VRAM)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./backend/data:/app/backend/data
+      - ./backend/models:/app/backend/models   # HF cache lives in ./backend/models/hf
+
+  frontend:
+    profiles: ["cpu", "cpu-ml", "gpu"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8000

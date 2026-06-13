@@ -1,0 +1,24 @@
+# GPU-phase deps — install ONLY on an NVIDIA CUDA host (see docs/GPU_DEPLOY.md).
+# These power flux_local (image), ltx_local (img->video), xtts_local (voice clone),
+# musicgen_local (music). Do NOT install on the CPU box — the app reports them
+# unavailable and keeps using the local CPU stack.
+#
+# torch is pinned to a CUDA 12.1 build; the Dockerfile.gpu base already ships torch,
+# so inside Docker you usually only need the lines below the torch block.
+
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch>=2.4
+torchvision>=0.19
+torchaudio>=2.4
+
+diffusers>=0.32          # FluxPipeline, LTXImageToVideoPipeline
+transformers>=4.44       # MusicGen
+accelerate>=0.34
+sentencepiece            # FLUX / T5 tokenizer
+protobuf
+imageio[ffmpeg]>=2.34    # export_to_video for LTX
+coqui-tts>=0.24          # XTTS-v2 voice cloning (maintained idiap fork; imports as `TTS`)
+acestep                  # ACE-Step — real sung vocals+music from lyrics (acestep_local SVS)
+# SadTalker (lip-sync) is NOT pip — clone the repo + download checkpoints, set SADTALKER_DIR:
+#   git clone https://github.com/OpenTalker/SadTalker && (cd SadTalker && bash scripts/download_models.sh)
+# its extra deps: pip install face_alignment gfpgan kornia yacs pydub safetensors librosa
