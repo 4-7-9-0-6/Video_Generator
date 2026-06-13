@@ -31,8 +31,9 @@ and optionally **SadTalker** (lip-sync).
 
 **Cell 1 — get the code + base deps**
 ```bash
-!git clone https://github.com/<your-fork>/toonforge.git || true
-%cd toonforge/backend
+# Public repo: clones directly. Private repo: first run a Python cell -> import os; os.environ['GITHUB_TOKEN']='ghp_...'
+!git clone https://${GITHUB_TOKEN:+$GITHUB_TOKEN@}github.com/4-7-9-0-6/Video_Generator.git || true
+%cd Video_Generator/backend
 !pip install -q -r requirements.txt
 !pip install -q "diffusers>=0.32" "transformers>=4.44" accelerate sentencepiece imageio[ffmpeg] acestep
 ```
@@ -63,7 +64,7 @@ The MP4 lands in the Kaggle/Colab output panel — download it. First run downlo
 !pip install -q face_alignment gfpgan kornia yacs pydub safetensors librosa
 ```
 ```python
-import os; os.environ["SADTALKER_DIR"] = "/kaggle/working/toonforge/backend/SadTalker"
+import os; os.environ["SADTALKER_DIR"] = "/kaggle/working/Video_Generator/backend/SadTalker"
 os.environ["PROVIDER_LIPSYNC"] = "sadtalker_local"
 ```
 ```bash
