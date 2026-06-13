@@ -1,0 +1,26 @@
+# Normalize line endings. Store text as LF; check out as LF so the shell scripts that run
+# on the Linux GPU runners (Kaggle/Colab) and in Docker stay valid (CRLF breaks `#!/bin/sh`).
+* text=auto eol=lf
+
+# Binary assets — never touch line endings.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.mp4   binary
+*.webm  binary
+*.wav   binary
+*.mp3   binary
+*.ogg   binary
+*.flac  binary
+*.mid   binary
+*.onnx  binary
+*.gguf  binary
+*.ckpt  binary
+*.safetensors binary
+*.pt    binary
+*.pth   binary
+*.zip   binary
+*.gz    binary

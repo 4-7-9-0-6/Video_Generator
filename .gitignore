@@ -27,6 +27,25 @@ backend/tools/
 *.onnx
 *.ckpt
 *.safetensors
+*.gguf
+*.pt
+*.pth
+
+# Generated media (in case anything lands outside backend/data/)
+backend/data/_*.png
+*.tmp.mp4
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs / temp
+*.log
+*.tmp
 
 # OS
 .DS_Store
