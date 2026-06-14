@@ -14,10 +14,12 @@ downloaded ``kaggle.json`` to ``~/.kaggle/kaggle.json`` (and phone-verify the ac
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,8 +43,16 @@ class KaggleStatus:
         return self.state == "complete"
 
 
-def _kaggle_exe() -> str | None:
-    return shutil.which("kaggle")
+def _kaggle_cmd() -> list[str] | None:
+    """Command prefix to invoke the Kaggle CLI. Prefer the PATH exe, else `python -m kaggle`
+    on the app's own interpreter — the `kaggle.exe` script often lands in a dir that's not on
+    PATH, so module invocation is the reliable path as long as the package is importable here."""
+    exe = shutil.which("kaggle")
+    if exe:
+        return [exe]
+    if importlib.util.find_spec("kaggle") is not None:
+        return [sys.executable, "-m", "kaggle"]
+    return None
 
 
 def _credentials() -> tuple[str, str] | None:
@@ -62,8 +72,8 @@ def _credentials() -> tuple[str, str] | None:
 
 def availability() -> tuple[bool, str]:
     """(usable, hint). Checks the CLI is installed and credentials are present."""
-    if _kaggle_exe() is None:
-        return False, "Kaggle CLI not installed. Run: pip install kaggle"
+    if _kaggle_cmd() is None:
+        return False, "Kaggle CLI not installed in the backend env. Run: pip install kaggle"
     if _credentials() is None:
         return False, ("No Kaggle API token. At kaggle.com -> Settings -> API -> Create New "
                        "Token, then save kaggle.json to ~/.kaggle/kaggle.json (or set "
@@ -81,7 +91,10 @@ def kernel_slug() -> str:
 
 
 def _run(args: list[str], timeout: float = 180.0) -> subprocess.CompletedProcess:
-    return subprocess.run([_kaggle_exe(), *args], capture_output=True, text=True, timeout=timeout)
+    cmd = _kaggle_cmd()
+    if cmd is None:
+        raise RuntimeError("Kaggle CLI not installed (pip install kaggle).")
+    return subprocess.run([*cmd, *args], capture_output=True, text=True, timeout=timeout)
 
 
 def _render_kernel_source(prompt: str, style: str, scenes: int) -> str:

@@ -43,20 +43,20 @@ def test_write_kernel_dir_metadata(tmp_path, monkeypatch):
 
 
 def test_availability_no_cli(monkeypatch):
-    monkeypatch.setattr(kaggle_render, "_kaggle_exe", lambda: None)
+    monkeypatch.setattr(kaggle_render, "_kaggle_cmd", lambda: None)
     ok, hint = kaggle_render.availability()
     assert ok is False and "pip install kaggle" in hint
 
 
 def test_availability_no_creds(monkeypatch):
-    monkeypatch.setattr(kaggle_render, "_kaggle_exe", lambda: "/usr/bin/kaggle")
+    monkeypatch.setattr(kaggle_render, "_kaggle_cmd", lambda: ["kaggle"])
     monkeypatch.setattr(kaggle_render, "_credentials", lambda: None)
     ok, hint = kaggle_render.availability()
     assert ok is False and "token" in hint.lower()
 
 
 def test_availability_ready(monkeypatch):
-    monkeypatch.setattr(kaggle_render, "_kaggle_exe", lambda: "/usr/bin/kaggle")
+    monkeypatch.setattr(kaggle_render, "_kaggle_cmd", lambda: ["kaggle"])
     monkeypatch.setattr(kaggle_render, "_credentials", lambda: ("tester", "key"))
     ok, hint = kaggle_render.availability()
     assert ok is True and hint == "ready"
