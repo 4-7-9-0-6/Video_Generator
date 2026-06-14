@@ -61,6 +61,14 @@ class ACEStepSVSProvider(SVSProvider):
         return await asyncio.to_thread(self._run, lyrics, key, tempo, voice, kw)
 
     def _run(self, lyrics: str, key: str, tempo: int, voice: str, kw: dict) -> GenResult:
+        # Pre-Ampere GPUs (T4/P100, compute capability < 8.0) have no cuDNN bf16 convolution
+        # engine, so ACE-Step's DCAE/vocoder decode crashes with "GET was unable to find an
+        # engine to execute this computation". cuDNN here only serves the small, run-once VAE/
+        # vocoder convs (the diffusion transformer is attention-based), so disabling it routes
+        # those convs to the native bf16 kernel at negligible cost and keeps the model in bf16.
+        import torch
+        if torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] < 8:
+            torch.backends.cudnn.enabled = False
         pipe = self._load()
         duration = float(kw.get("duration_s", settings.acestep_duration_s))
         tags = self._tags(key, tempo, voice=voice, **kw)
