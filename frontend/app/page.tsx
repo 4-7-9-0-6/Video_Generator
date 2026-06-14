@@ -212,7 +212,9 @@ export default function Home() {
           <div style={{ marginTop: 12 }}>
             <video controls style={{ width: "100%", maxWidth: 640, borderRadius: 8 }} src={`${API_BASE}/assets/${gpuVideoId}`} />
             <p className="caption" style={{ textAlign: "left" }}>
-              <a href={`${API_BASE}/assets/${gpuVideoId}`} download>⬇ download song.mp4</a>
+              <a href={`${API_BASE}/assets/${gpuVideoId}`} download>⬇ download</a>
+              {" · "}
+              <a href="/videos">open in your Videos library →</a>
             </p>
           </div>
         )}

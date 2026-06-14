@@ -67,6 +67,19 @@ export interface Job {
   error: string;
 }
 
+export interface Asset {
+  id: string;
+  project_id: string | null;
+  kind: string;
+  path: string;
+  mime: string;
+  provider: string | null;
+  cost_usd: number;
+  gpu_seconds: number;
+  meta: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface Shot {
   id: string;
   project_id: string;
@@ -153,6 +166,15 @@ export const api = {
       characters: string[];
       character_jobs: Job[];
     }>("/generate/from-prompt", { method: "POST", body: JSON.stringify(body) }),
+
+  listAssets: (kind?: string, projectId?: string) => {
+    const q = new URLSearchParams();
+    if (kind) q.set("kind", kind);
+    if (projectId) q.set("project_id", projectId);
+    const s = q.toString();
+    return req<Asset[]>(`/assets${s ? `?${s}` : ""}`);
+  },
+  deleteAsset: (id: string) => req<{ deleted: string }>(`/assets/${id}`, { method: "DELETE" }),
 
   gpuVideoAvailability: () =>
     req<{ available: boolean; hint: string; kernel: string | null }>(

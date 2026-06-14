@@ -17,7 +17,8 @@ export default function RootLayout({
         <header className="topbar">
           <a href="/" className="brand">🎬 ToonForge Studio</a>
           <nav className="row" style={{ gap: 14 }}>
-            <a href="/">Projects</a>
+            <a href="/">Home</a>
+            <a href="/videos">Videos</a>
             <a href="/voice">VoiceLab</a>
           </nav>
           <span className="tagline" style={{ marginLeft: "auto" }}>local-first · free · EN/FR</span>
