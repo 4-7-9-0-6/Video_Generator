@@ -17,6 +17,17 @@ Providers are chosen by env (the notebook sets them):
 """
 from __future__ import annotations
 
+# Pre-Ampere GPUs (T4/P100, the free-tier cards) have no cuDNN bf16 convolution engine, so the
+# ACE-Step and LTX VAE/vocoder decodes crash ("unable to find an engine to execute this
+# computation"). Those convs are small and run once, so disabling cuDNN routes them to the
+# native bf16 kernel at negligible cost and keeps the models in fast bf16.
+try:
+    import torch as _torch
+    if _torch.cuda.is_available() and _torch.cuda.get_device_capability(0)[0] < 8:
+        _torch.backends.cudnn.enabled = False
+except Exception:  # noqa: BLE001 — torch absent (CPU box) or driver issue: nothing to disable
+    pass
+
 import argparse
 import asyncio
 import subprocess
