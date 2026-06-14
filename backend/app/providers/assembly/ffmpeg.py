@@ -5,6 +5,7 @@ Requires the ffmpeg binary on PATH. On Windows: `winget install Gyan.FFmpeg`.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 
 from ...config import settings
 from ...ffmpeg_util import ffmpeg_exe
@@ -26,13 +27,13 @@ class FFmpegAssemblyProvider(AssemblyProvider):
         return Availability(True)
 
     async def _run(self, args: list[str]) -> None:
-        proc = await asyncio.create_subprocess_exec(
-            ffmpeg_exe(), "-y", *args,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-        _out, err = await proc.communicate()
+        # thread + sync subprocess (not asyncio's, which NotImplementedError's on non-Proactor
+        # Windows event loops); see the note in app/compose.py._run
+        proc = await asyncio.to_thread(
+            lambda: subprocess.run([ffmpeg_exe(), "-y", *args], capture_output=True))
         if proc.returncode != 0:
-            raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err.decode(errors='ignore')[-800:]}")
+            err = (proc.stderr or proc.stdout or b"").decode(errors="ignore")
+            raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err[-800:]}")
 
     def _abs(self, rel: str) -> str:
         return str((settings.assets_dir() / rel).resolve())

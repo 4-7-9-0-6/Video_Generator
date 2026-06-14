@@ -10,6 +10,7 @@ Windows drive-letter paths never trip the subtitles filter's escaping rules.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -111,12 +112,14 @@ def group_words_to_cues(words: list[tuple[str, float, float]], *, max_words: int
 
 
 async def _run(args: list[str], cwd: Path) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        *args, cwd=str(cwd),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    _o, err = await proc.communicate()
+    # Run FFmpeg in a worker thread with sync subprocess.run — NOT asyncio.create_subprocess_exec,
+    # which raises NotImplementedError on Windows event loops that aren't the Proactor loop (e.g.
+    # under some uvicorn/--reload setups). subprocess.run works regardless of the loop type.
+    proc = await asyncio.to_thread(
+        lambda: subprocess.run(args, cwd=str(cwd), capture_output=True))
     if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err.decode(errors='ignore')[-900:]}")
+        err = (proc.stderr or proc.stdout or b"").decode(errors="ignore")
+        raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err[-900:]}")
 
 
 async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]], *,

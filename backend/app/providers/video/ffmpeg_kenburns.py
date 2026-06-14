@@ -7,6 +7,7 @@ at zero cost. Set PROVIDER_VIDEO=ffmpeg_kenburns once FFmpeg is on PATH.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -45,11 +46,10 @@ class FFmpegKenBurnsVideoProvider(VideoProvider):
                 "-t", f"{duration_s:.3f}", "-r", str(fps),
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", str(out),
             ]
-            proc = await asyncio.create_subprocess_exec(
-                *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            _o, err = await proc.communicate()
+            proc = await asyncio.to_thread(lambda: subprocess.run(args, capture_output=True))
             if proc.returncode != 0:
-                raise RuntimeError(f"ffmpeg ken-burns failed: {err.decode(errors='ignore')[-600:]}")
+                err = (proc.stderr or proc.stdout or b"").decode(errors="ignore")
+                raise RuntimeError(f"ffmpeg ken-burns failed: {err[-600:]}")
             data = out.read_bytes()
         return GenResult(data=data, mime="video/mp4", cost=Cost(),
                          meta={"provider": "ffmpeg_kenburns", "motion": motion, "kind": kind})
