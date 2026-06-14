@@ -42,6 +42,23 @@ export default function StoryboardPage() {
   const [thumbs, setThumbs] = useState<{ asset_id: string; title: string | null }[]>([]);
   const [thumbJob, setThumbJob] = useState<Job | null>(null);
 
+  // social / marketing pack
+  const [socialPlatform, setSocialPlatform] = useState("youtube");
+  const [socialBusy, setSocialBusy] = useState(false);
+  const [pack, setPack] = useState<Awaited<ReturnType<typeof api.socialPack>> | null>(null);
+
+  async function genSocial() {
+    setSocialBusy(true);
+    setErr("");
+    try {
+      setPack(await api.socialPack(id, socialPlatform));
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setSocialBusy(false);
+    }
+  }
+
   const load = useCallback(async () => {
     const [chars, sh, jobs] = await Promise.all([
       api.listCharacters(id),
@@ -363,6 +380,52 @@ export default function StoryboardPage() {
                 </p>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="panel">
+        <div className="spread">
+          <h3 style={{ margin: 0 }}>📣 Social / marketing pack</h3>
+          <div className="row" style={{ gap: 8 }}>
+            <select value={socialPlatform} onChange={(e) => setSocialPlatform(e.target.value)} style={{ width: "auto" }}>
+              {["youtube", "tiktok", "instagram", "shorts"].map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <button onClick={genSocial} disabled={socialBusy}>{socialBusy ? "writing…" : "Generate"}</button>
+          </div>
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Auto-write titles, description, hashtags &amp; a caption for your post — plus a ready-to-post score. Free (text only).
+        </p>
+        {pack && (
+          <div style={{ marginTop: 10 }}>
+            <div className="row" style={{ gap: 10, alignItems: "center" }}>
+              <span className="badge ok">{pack.virality.grade} · {pack.virality.score}/100</span>
+            </div>
+            <label style={{ marginTop: 10 }}>Title options</label>
+            {pack.titles.map((t, i) => (
+              <div key={i} className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+                <span>{t}</span>
+                <button className="ghost" onClick={() => navigator.clipboard?.writeText(t)} style={{ padding: "4px 10px" }}>copy</button>
+              </div>
+            ))}
+            <label style={{ marginTop: 10 }}>Description</label>
+            <textarea readOnly value={pack.description} style={{ minHeight: 60 }} />
+            <label style={{ marginTop: 10 }}>Hashtags</label>
+            <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+              <span className="mono" style={{ wordBreak: "break-word" }}>{pack.hashtag_string}</span>
+              <button className="ghost" onClick={() => navigator.clipboard?.writeText(pack.hashtag_string)} style={{ padding: "4px 10px" }}>copy</button>
+            </div>
+            <label style={{ marginTop: 10 }}>Caption</label>
+            <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
+              <span>{pack.caption}</span>
+              <button className="ghost" onClick={() => navigator.clipboard?.writeText(pack.caption)} style={{ padding: "4px 10px" }}>copy</button>
+            </div>
+            {pack.virality.tips.length > 0 && (
+              <div className="caption" style={{ textAlign: "left", marginTop: 10 }}>
+                💡 Tips to boost reach: {pack.virality.tips.join(" · ")}
+              </div>
+            )}
           </div>
         )}
       </div>

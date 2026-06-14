@@ -219,6 +219,12 @@ export const api = {
   exportPresets: () =>
     req<Record<string, { width: number; height: number }>>("/export/presets"),
   exportGrades: () => req<string[]>("/export/grades"),
+  socialPack: (projectId: string, platform = "youtube") =>
+    req<{
+      platform: string; titles: string[]; description: string; hashtags: string[];
+      hashtag_string: string; caption: string;
+      virality: { score: number; grade: string; reasons: string[]; tips: string[] };
+    }>(`/projects/${projectId}/social-pack?platform=${encodeURIComponent(platform)}`, { method: "POST" }),
   exportEpisode: (projectId: string, body: { preset: string; voice: boolean; sing?: boolean; sing_key?: string; sing_tempo?: number; sing_vibrato?: number; lipsync?: boolean; subtitles: boolean; word_subtitles?: boolean; music?: boolean; music_auto?: boolean; smart_reframe?: boolean; grade?: string }) =>
     req<Job>(`/projects/${projectId}/export`, { method: "POST", body: JSON.stringify(body) }),
   musicBrief: (projectId: string) =>

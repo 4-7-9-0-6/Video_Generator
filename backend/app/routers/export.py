@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from .. import compose, models, music_brief
+from .. import compose, models, music_brief, social_pack
 from ..jobs import queue
 from ..schemas import ExportRequest
 
@@ -52,6 +52,20 @@ def music_brief_for_project(project_id: str) -> dict:
     shots = models.list_where("shots", "project_id = ?", (project_id,), "idx ASC")
     lyrics = " ".join(s.get("text", "") for s in shots)
     return music_brief.music_brief(lyrics)
+
+
+@router.post("/projects/{project_id}/social-pack")
+async def social_pack_for_project(project_id: str, platform: str = "youtube") -> dict:
+    """Generate ready-to-post titles + description + hashtags + caption + a virality score from
+    the project's title and lyrics. LLM text (free) with heuristic fallbacks; no GPU/Cloudflare."""
+    project = models.get("projects", project_id)
+    if project is None:
+        raise HTTPException(404, "project not found")
+    shots = models.list_where("shots", "project_id = ?", (project_id,), "idx ASC")
+    lyrics = "\n".join(s.get("text", "") for s in shots if s.get("text"))
+    return await social_pack.generate_pack(
+        project["name"], lyrics, style=project.get("style_preset", ""),
+        language=project.get("language", "en"), platform=platform)
 
 
 @router.get("/projects/{project_id}/cost")
