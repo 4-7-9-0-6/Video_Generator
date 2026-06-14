@@ -88,6 +88,19 @@ async def render(topic: str, lyrics_text: str, style: str, scenes: int, lipsync:
                           duration_s=max(20, len(lyric_lines) * 6))
     print(f"[2/5] ACE-Step sung track: {len(sung.data) // 1024} KB", flush=True)
 
+    # ACE-Step (~7 GB) and LTX-Video don't co-fit on a 15 GB T4, so release the singer from GPU
+    # memory now that the track is rendered — the video model then loads into the freed space.
+    import gc
+    import app.providers.svs.acestep_local as _ace
+    _ace._pipe = None
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001 — no torch / no CUDA: nothing to free
+        pass
+
     with TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
         (tmpd / "song.wav").write_bytes(sung.data)
