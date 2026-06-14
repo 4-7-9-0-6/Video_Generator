@@ -6,11 +6,14 @@ with perceptual-hash drift auto-regeneration and a consistency report). New job 
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import tempfile
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
-from .. import compose, foundry, ip_guard, models, scene, thumbnail
+from .. import compose, foundry, ip_guard, kaggle_render, models, scene, thumbnail
 from ..config import settings
 from ..providers.base import Capability, GenResult
 from ..providers.registry import get_provider
@@ -330,9 +333,67 @@ async def handle_thumbnails(job: dict[str, Any], ctx: JobContext) -> dict[str, A
     return {"project_id": project["id"], "thumbnails": thumbs, "count": len(thumbs)}
 
 
+async def handle_gpu_video(job: dict[str, Any], ctx: JobContext) -> dict[str, Any]:
+    """Dispatch the full prompt->sung+animated MP4 render to a free Kaggle GPU, poll until it
+    finishes (~30-40 min), then download the video and save it as a project asset. The GPU work
+    (ACE-Step singing + LTX animation) can't run on this no-GPU machine, so it runs on Kaggle's
+    hardware via a private batch kernel (ToS-safe). One worker is busy for the whole render."""
+    payload = job["payload"]
+    prompt = payload["prompt"]
+    style = payload.get("style_preset", "anime_cyberpunk")
+    scenes = int(payload.get("scenes", 6))
+    project_id = payload.get("project_id")
+
+    ok, hint = kaggle_render.availability()
+    if not ok:
+        raise RuntimeError(hint)
+
+    ctx.progress(0.03, "dispatching render to Kaggle GPU…")
+    slug = await asyncio.to_thread(kaggle_render.dispatch, prompt, style, scenes)
+    ctx.progress(0.08, f"queued on Kaggle ({slug}) — this takes ~30-40 min")
+
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+    await asyncio.sleep(min(20.0, settings.kaggle_poll_interval_s))  # let the new run register
+    last = "queued"
+    while True:
+        st = await asyncio.to_thread(kaggle_render.status, slug)
+        if st.state != "unknown":
+            last = st.state
+        if st.done:
+            if not st.ok:
+                raise RuntimeError(f"Kaggle render ended in state '{st.state}'. Open the kernel "
+                                   f"on kaggle.com to see the log. {st.message[:300]}")
+            break
+        elapsed = loop.time() - start
+        if elapsed > settings.kaggle_timeout_s:
+            raise RuntimeError(f"Kaggle render timed out after {int(elapsed)}s (last state: {last})")
+        ctx.progress(min(0.9, 0.1 + 0.8 * elapsed / settings.kaggle_timeout_s), f"Kaggle GPU: {last}…")
+        await asyncio.sleep(settings.kaggle_poll_interval_s)
+
+    ctx.progress(0.92, "downloading the finished video from Kaggle…")
+    with tempfile.TemporaryDirectory() as tmp:
+        mp4 = await asyncio.to_thread(kaggle_render.fetch_output, Path(tmp), slug)
+        if mp4 is None:
+            raise RuntimeError("Kaggle run completed but no song.mp4 was found in its output.")
+        data = mp4.read_bytes()
+
+    storage = get_provider(Capability.STORAGE)
+    rel = storage.put(data, name="song.mp4", subdir=f"gpu_video/{project_id or 'adhoc'}")
+    asset = models.create_asset(
+        kind="video", path=rel, project_id=project_id, mime="video/mp4",
+        sha256=hashlib.sha256(data).hexdigest(), provider="kaggle:acestep+ltx",
+        meta={"prompt": prompt, "style": style, "scenes": scenes, "kernel": slug,
+              "source": "kaggle_gpu"},
+    )
+    ctx.progress(1.0, "video ready")
+    return {"asset_id": asset["id"], "path": rel, "kernel": slug, "bytes": len(data)}
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any], JobContext], Awaitable[dict[str, Any]]]] = {
     "character_sheets": handle_character_sheets,
     "shot_keyframe": handle_shot_keyframe,
     "episode_assemble": handle_episode_assemble,
     "thumbnails": handle_thumbnails,
+    "gpu_video": handle_gpu_video,
 }

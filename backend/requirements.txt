@@ -6,3 +6,4 @@ pydantic>=2.7
 python-multipart>=0.0.9
 Pillow>=10.3
 numpy>=1.26
+kaggle>=1.6          # drive a free Kaggle GPU for the sung+animated render (optional; key-gated)

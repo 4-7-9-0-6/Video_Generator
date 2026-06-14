@@ -81,6 +81,12 @@ class Settings:
     openrouter_api_base: str = field(default_factory=lambda: _env("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"))
     higgsfield_api_base: str = field(default_factory=lambda: _env("HIGGSFIELD_API_BASE", "https://api.higgsfield.ai"))
 
+    # Kaggle GPU render (app dispatches the GPU render to a free Kaggle kernel, pulls back the MP4)
+    kaggle_render_repo: str = field(default_factory=lambda: _env("KAGGLE_RENDER_REPO", "https://github.com/4-7-9-0-6/Video_Generator.git"))
+    kaggle_kernel_slug: str = field(default_factory=lambda: _env("KAGGLE_KERNEL_SLUG", ""))  # "" -> <username>/toonforge-render
+    kaggle_poll_interval_s: float = field(default_factory=lambda: float(_env("KAGGLE_POLL_INTERVAL_S", "30")))
+    kaggle_timeout_s: float = field(default_factory=lambda: float(_env("KAGGLE_TIMEOUT_S", "3600")))
+
     # piper
     piper_models_dir: Path = field(default_factory=lambda: _resolve(_env("PIPER_MODELS_DIR", "./models/piper")))
     piper_voice_en: str = field(default_factory=lambda: _env("PIPER_VOICE_EN", "en_US-amy-medium"))

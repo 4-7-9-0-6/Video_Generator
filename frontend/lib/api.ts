@@ -154,6 +154,15 @@ export const api = {
       character_jobs: Job[];
     }>("/generate/from-prompt", { method: "POST", body: JSON.stringify(body) }),
 
+  gpuVideoAvailability: () =>
+    req<{ available: boolean; hint: string; kernel: string | null }>(
+      "/generate/gpu-video/availability",
+    ),
+  gpuVideo: (body: { prompt: string; style_preset: string; scenes?: number; project_id?: string }) =>
+    req<{ job: Job; kernel: string; note: string }>(
+      "/generate/gpu-video", { method: "POST", body: JSON.stringify(body) },
+    ),
+
   listProjects: () => req<Project[]>("/projects"),
   createProject: (body: { name: string; language?: string; style_preset?: string }) =>
     req<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),

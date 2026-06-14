@@ -5,13 +5,40 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from .. import foundry, lore, models, safety, scene, songwriter
+from .. import foundry, kaggle_render, lore, models, safety, scene, songwriter
 from ..jobs import queue
 from ..providers.base import Capability
 from ..providers.registry import ProviderUnavailable, get_provider
-from ..schemas import FromPromptRequest
+from ..schemas import FromPromptRequest, GpuVideoRequest
 
 router = APIRouter(tags=["generate"])
+
+
+@router.get("/generate/gpu-video/availability")
+async def gpu_video_availability() -> dict:
+    """Whether the app can drive a Kaggle GPU (CLI installed + API token present)."""
+    ok, hint = kaggle_render.availability()
+    return {"available": ok, "hint": hint, "kernel": kaggle_render.kernel_slug() if ok else None}
+
+
+@router.post("/generate/gpu-video")
+async def gpu_video(body: GpuVideoRequest) -> dict:
+    """Type a prompt → the app runs the full sung+animated render on a free Kaggle GPU and saves
+    the MP4 back as a project asset. Returns a job; poll GET /jobs/{id} for progress (~30-40 min)."""
+    if body.style_preset not in foundry.STYLE_PRESETS:
+        raise HTTPException(422, f"unknown style_preset; choose from {list(foundry.STYLE_PRESETS)}")
+    ip = safety.check_ip(body.prompt)
+    if not ip.ok:
+        raise HTTPException(422, {"error": ip.reason, "matched": list(ip.matched)})
+    ok, hint = kaggle_render.availability()
+    if not ok:
+        raise HTTPException(503, hint)
+    job = queue.enqueue("gpu_video", {
+        "prompt": body.prompt, "style_preset": body.style_preset,
+        "scenes": body.scenes, "project_id": body.project_id,
+    }, project_id=body.project_id, max_attempts=1)   # one Kaggle run; don't auto-retry a 40-min job
+    return {"job": job, "kernel": kaggle_render.kernel_slug(),
+            "note": "Rendering on a free Kaggle GPU — this takes ~30-40 min. Poll the job for progress."}
 
 
 @router.post("/generate/from-prompt")

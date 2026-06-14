@@ -51,6 +51,14 @@ class FromPromptRequest(BaseModel):
     default_background: str = ""
 
 
+class GpuVideoRequest(BaseModel):
+    """Dispatch the full sung + animated render to a free Kaggle GPU and pull back the MP4."""
+    prompt: str = Field(min_length=1, max_length=2000)
+    style_preset: str = "anime_cyberpunk"
+    scenes: int = Field(default=6, ge=2, le=12)
+    project_id: str | None = None    # attach the resulting video to a project, if given
+
+
 class PlanRequest(BaseModel):
     """Script → shots (spec §C.1)."""
     script: str = Field(min_length=1, max_length=20000)

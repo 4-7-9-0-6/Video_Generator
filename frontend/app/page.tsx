@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, type Project, type ProviderProbe, type Style } from "@/lib/api";
+import { api, API_BASE, type Job, type Project, type ProviderProbe, type Style } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
@@ -22,6 +22,12 @@ export default function Home() {
   const [pScenes, setPScenes] = useState(8);
   const [pSafe, setPSafe] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
+
+  // GPU render via Kaggle (real singing + animation)
+  const [gpuAvail, setGpuAvail] = useState<{ available: boolean; hint: string; kernel: string | null } | null>(null);
+  const [gpuJob, setGpuJob] = useState<Job | null>(null);
+  const [gpuBusy, setGpuBusy] = useState(false);
+  const [gpuVideoId, setGpuVideoId] = useState<string | null>(null);
   const llmReady = providers.some((p) => p.capability === "llm" && p.selected && p.available);
 
   async function refresh() {
@@ -47,7 +53,39 @@ export default function Home() {
 
   useEffect(() => {
     refresh();
+    api.gpuVideoAvailability().then(setGpuAvail).catch(() => setGpuAvail(null));
   }, []);
+
+  async function generateOnGpu() {
+    if (!prompt.trim()) return;
+    setGpuBusy(true);
+    setErr("");
+    setGpuVideoId(null);
+    setGpuJob(null);
+    try {
+      const { job } = await api.gpuVideo({
+        prompt: prompt.trim(), style_preset: pStyle, scenes: pScenes,
+      });
+      setGpuJob(job);
+      // poll the job until it finishes (the Kaggle render takes ~30-40 min)
+      let cur = job;
+      while (cur.status === "queued" || cur.status === "running") {
+        await new Promise((r) => setTimeout(r, 15000));
+        cur = await api.getJob(job.id);
+        setGpuJob(cur);
+      }
+      if (cur.status === "succeeded") {
+        const assetId = cur.result?.asset_id as string | undefined;
+        if (assetId) setGpuVideoId(assetId);
+      } else {
+        setErr(`GPU render ${cur.status}: ${cur.error || cur.message}`);
+      }
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setGpuBusy(false);
+    }
+  }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -143,6 +181,47 @@ export default function Home() {
           </p>
         )}
       </form>
+
+      <div className="panel">
+        <div className="spread">
+          <h3 style={{ margin: 0 }}>🎥 Render on GPU — real singing + animation (free, via Kaggle)</h3>
+          <span className={`badge ${gpuAvail?.available ? "ok" : "warn"}`}>
+            {gpuAvail?.available ? "Kaggle ready" : "needs Kaggle token"}
+          </span>
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          Uses the <b>same prompt above</b>. Dispatches the full <b>ACE-Step singing + LTX animation</b>{" "}
+          render to your free Kaggle GPU and pulls the finished MP4 back here. ~30–40 min, $0.
+        </p>
+        <div className="row" style={{ marginTop: 8, gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <button type="button" onClick={generateOnGpu} disabled={gpuBusy || !prompt.trim() || !gpuAvail?.available}>
+            {gpuBusy ? "rendering on Kaggle…" : "Render on GPU"}
+          </button>
+          {gpuJob && (
+            <span className="caption">
+              {gpuJob.status} · {Math.round((gpuJob.progress || 0) * 100)}% · {gpuJob.message}
+            </span>
+          )}
+        </div>
+        {gpuBusy && (
+          <div style={{ marginTop: 8, height: 6, background: "var(--border)", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ width: `${Math.round((gpuJob?.progress || 0) * 100)}%`, height: "100%", background: "#4caf50", transition: "width .5s" }} />
+          </div>
+        )}
+        {gpuVideoId && (
+          <div style={{ marginTop: 12 }}>
+            <video controls style={{ width: "100%", maxWidth: 640, borderRadius: 8 }} src={`${API_BASE}/assets/${gpuVideoId}`} />
+            <p className="caption" style={{ textAlign: "left" }}>
+              <a href={`${API_BASE}/assets/${gpuVideoId}`} download>⬇ download song.mp4</a>
+            </p>
+          </div>
+        )}
+        {gpuAvail && !gpuAvail.available && (
+          <p className="caption" style={{ textAlign: "left", marginTop: 8 }}>
+            Setup: {gpuAvail.hint} (see <code>docs/APP_GPU_RENDER.md</code>)
+          </p>
+        )}
+      </div>
 
       {templates.length > 0 && (
         <div className="panel">
