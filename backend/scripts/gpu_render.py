@@ -48,13 +48,10 @@ async def render(topic: str, lyrics_text: str, style: str, scenes: int, lipsync:
     video = get_provider(Capability.VIDEO, required=False) if not lipsync else None
     lip = get_provider(Capability.LIPSYNC) if lipsync else None
 
-    # 1. lyrics: use provided text, else have the LLM write them
+    # 1. lyrics: cast characters + scenes from the USER'S words (keeps them verbatim), else the
+    #    LLM writes an original song from the topic.
     if lyrics_text:
-        lines = [{"section": "verse", "text": ln.strip(), "characters": []}
-                 for ln in lyrics_text.splitlines() if ln.strip()]
-        song = {"title": topic[:60] or "Song", "mood": "playful",
-                "characters": [{"name": "Hero", "description": topic}], "lines": lines,
-                "has_chorus": any("chorus" in ln.lower() for ln in lyrics_text.splitlines())}
+        song = await songwriter.cast_from_lyrics(lyrics_text, style=style)
     else:
         song = await songwriter.write_song(topic, style=style, scenes=scenes)
     lyric_lines = [ln["text"] for ln in song["lines"]]

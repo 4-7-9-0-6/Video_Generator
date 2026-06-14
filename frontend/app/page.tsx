@@ -15,6 +15,7 @@ export default function Home() {
   const [pScenes, setPScenes] = useState(6);
   const [pSafe, setPSafe] = useState(false);
   const [mode, setMode] = useState<"fast" | "gpu">("fast");
+  const [inputType, setInputType] = useState<"topic" | "lyrics">("topic");
 
   const [genBusy, setGenBusy] = useState(false);     // fast (CPU) flow
   const [gpuAvail, setGpuAvail] = useState<{ available: boolean; hint: string } | null>(null);
@@ -24,7 +25,8 @@ export default function Home() {
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof api.usage>> | null>(null);
 
   const llmReady = providers.some((p) => p.capability === "llm" && p.selected && p.available);
-  const ready = mode === "fast" ? llmReady : !!gpuAvail?.available;
+  // lyrics casting has a no-LLM fallback, so it doesn't strictly require a key (topic→song does)
+  const ready = mode === "fast" ? (inputType === "lyrics" ? true : llmReady) : !!gpuAvail?.available;
   const busy = mode === "fast" ? genBusy : gpuBusy;
 
   useEffect(() => {
@@ -41,9 +43,9 @@ export default function Home() {
     setGenBusy(true);
     setErr("");
     try {
-      const res = await api.fromPrompt({
-        prompt: prompt.trim(), style_preset: pStyle, scenes: pScenes, safe_mode: pSafe, render: true,
-      });
+      const res = inputType === "lyrics"
+        ? await api.fromLyrics({ lyrics: prompt.trim(), style_preset: pStyle, safe_mode: pSafe, render: true })
+        : await api.fromPrompt({ prompt: prompt.trim(), style_preset: pStyle, scenes: pScenes, safe_mode: pSafe, render: true });
       router.push(`/projects/${res.project.id}/storyboard`);
     } catch (e) {
       setErr(String(e));
@@ -57,7 +59,9 @@ export default function Home() {
     setGpuVideoId(null);
     setGpuJob(null);
     try {
-      const { job } = await api.gpuVideo({ prompt: prompt.trim(), style_preset: pStyle, scenes: pScenes });
+      const { job } = await api.gpuVideo(inputType === "lyrics"
+        ? { lyrics: prompt.trim(), style_preset: pStyle, scenes: pScenes }
+        : { prompt: prompt.trim(), style_preset: pStyle, scenes: pScenes });
       setGpuJob(job);
       let cur = job;
       while (cur.status === "queued" || cur.status === "running") {
@@ -91,16 +95,26 @@ export default function Home() {
       <div style={{ textAlign: "center", margin: "16px 0 22px" }}>
         <h1 style={{ fontSize: 28 }}>Create a video</h1>
         <p className="muted" style={{ marginTop: 4 }}>
-          Describe it in a sentence — the AI writes the song, casts the characters, and renders the music video.
+          {inputType === "lyrics"
+            ? "Paste your poem/lyrics — the AI keeps your exact words and casts fitting characters, scenes & music."
+            : "Describe it in a sentence — the AI writes the song, casts the characters, and renders the music video."}
         </p>
       </div>
 
       {err && <p className="error" style={{ textAlign: "center" }}>{err}</p>}
 
       <div className="panel" style={{ maxWidth: 760, margin: "0 auto" }}>
+        <div className="row" style={{ gap: 8, marginBottom: 10 }}>
+          <button type="button" onClick={() => setInputType("topic")}
+            className={inputType === "topic" ? "" : "ghost"} style={{ padding: "6px 14px" }}>💡 Topic</button>
+          <button type="button" onClick={() => setInputType("lyrics")}
+            className={inputType === "lyrics" ? "" : "ghost"} style={{ padding: "6px 14px" }}>🎤 I have lyrics</button>
+        </div>
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)}
-          placeholder="e.g. a brave little robot who lights up a neon city at night"
-          style={{ minHeight: 90, fontSize: 16 }} />
+          placeholder={inputType === "lyrics"
+            ? "Paste your lyrics here — one line per row…\nSplish splash, it's bath time fun\nBubbles rising one by one"
+            : "e.g. a brave little robot who lights up a neon city at night"}
+          style={{ minHeight: inputType === "lyrics" ? 140 : 90, fontSize: 16 }} />
 
         <div className="row" style={{ marginTop: 12, gap: 16, alignItems: "end", flexWrap: "wrap" }}>
           <div>
@@ -143,12 +157,14 @@ export default function Home() {
           </button>
           <span className={`badge ${ready ? "ok" : "warn"}`}>
             {mode === "fast"
-              ? (llmReady ? "ready" : "needs OPENROUTER_API_KEY")
+              ? (inputType === "lyrics"
+                  ? (llmReady ? "ready" : "ready · add key for richer casting")
+                  : (llmReady ? "ready" : "needs OPENROUTER_API_KEY"))
               : (gpuAvail?.available ? "Kaggle ready" : "needs Kaggle token")}
           </span>
         </div>
 
-        {mode === "fast" && !llmReady && (
+        {mode === "fast" && inputType === "topic" && !llmReady && (
           <p className="caption" style={{ textAlign: "left", marginTop: 8 }}>
             Add a free OpenRouter key to <code>backend/.env</code> (<code>OPENROUTER_API_KEY=sk-or-…</code>) and restart the backend.
           </p>

@@ -32,6 +32,12 @@ def test_kernel_source_bakes_prompt_style_and_keys():
     compile(src, "<kernel>", "exec")            # the generated script must be valid Python
 
 
+def test_kernel_source_with_lyrics_uses_lyrics_file():
+    src = kaggle_render._render_kernel_source("", "anime_cute", 6, lyrics="Splish splash\nbubbles")
+    assert "Splish splash" in src and "--lyrics-file" in src and "LYRICS" in src
+    compile(src, "<kernel>", "exec")
+
+
 def test_write_kernel_dir_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(kaggle_render, "kernel_slug", lambda: "tester/toonforge-render")
     kaggle_render._write_kernel_dir(tmp_path, "p", "fantasy", 4)

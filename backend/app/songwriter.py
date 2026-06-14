@@ -107,3 +107,100 @@ async def write_song(topic: str, *, language: str = "en", style: str = "anime_cy
     except (json.JSONDecodeError, ValueError) as e:
         raise ValueError(f"LLM did not return valid JSON: {e}\n--- raw ---\n{raw[:500]}")
     return normalize_song(data, fallback_title=topic[:60])
+
+
+# ---- lyrics -> cast (keep the user's exact words; the LLM only adds characters + scenes) ----
+
+_CAST_SYSTEM = ("You are a music-video casting director and storyboard artist. You are given "
+                "EXISTING song lyrics that must NOT be changed. You invent ORIGINAL characters "
+                "(never real brands/franchises) and design scenes that fit the lyrics. Respond "
+                "with VALID JSON and nothing else.")
+
+
+def _cast_prompt(lines: list[str], language: str, style: str) -> str:
+    numbered = "\n".join(f"{i + 1}. {ln}" for i, ln in enumerate(lines))
+    return f'''These are EXISTING song lyrics. DO NOT change, add, or remove any words.
+Cast original characters and design a scene for each line.
+
+Lyrics (numbered):
+{numbered}
+
+Language: {language}
+Visual style: {style}
+
+Return ONLY JSON with this shape:
+{{
+  "title": "short catchy title for this song",
+  "mood": one of {sorted(_MOODS)},
+  "characters": [
+    {{"name": "OneWordName", "description": "vivid VISUAL description for an image model (look, colors, outfit)"}}
+  ],
+  "lines": [
+    {{"n": 1, "section": "verse|chorus|intro|bridge|outro", "characters": ["Name"], "background": "short scene/setting for this line"}}
+  ]
+}}
+Rules:
+- 1 to 3 original characters that suit these lyrics (no real brands/franchises).
+- Give EVERY numbered line an entry with its on-screen character(s) and a background.
+- Mark repeated hook lines as "chorus".'''
+
+
+def cast_song_from_lyrics(lines: list[str], data: dict) -> dict:
+    """Build a song plan from the USER'S lines (verbatim) + the LLM's casting/scenes. The line
+    TEXT is always the user's original — the LLM only contributes characters, mood, backgrounds."""
+    title = str(data.get("title") or (lines[0][:40] if lines else "Song")).strip()[:120]
+    mood = str(data.get("mood") or "playful").lower()
+    if mood not in _MOODS:
+        mood = "playful"
+
+    characters: list[dict] = []
+    for c in (data.get("characters") or [])[:3]:
+        name = str(c.get("name") or "").strip()
+        desc = str(c.get("description") or "").strip()
+        if name and desc:
+            characters.append({"name": name, "description": desc})
+    if not characters:
+        characters = [{"name": "Hero", "description": "an original cartoon main character"}]
+    valid = {c["name"] for c in characters}
+
+    meta_by_n: dict[int, dict] = {}
+    for ln in (data.get("lines") or []):
+        try:
+            meta_by_n[int(ln.get("n"))] = ln
+        except (TypeError, ValueError):
+            continue
+
+    counts: dict[str, int] = {}
+    for ln in lines:
+        counts[ln.lower()] = counts.get(ln.lower(), 0) + 1
+
+    out_lines: list[dict] = []
+    for i, text in enumerate(lines):
+        m = meta_by_n.get(i + 1, {})
+        section = str(m.get("section") or "").lower()
+        if section not in _SECTIONS:
+            section = "chorus" if counts[text.lower()] > 1 else "verse"
+        present = [n for n in (m.get("characters") or []) if n in valid] or [characters[0]["name"]]
+        out_lines.append({"section": section, "text": text, "characters": present,
+                          "background": str(m.get("background") or "").strip()})
+
+    return {"title": title, "mood": mood, "characters": characters, "lines": out_lines,
+            "has_chorus": any(ln["section"] == "chorus" for ln in out_lines)}
+
+
+async def cast_from_lyrics(lyrics: str, *, language: str = "en",
+                           style: str = "anime_cyberpunk") -> dict:
+    """Paste your poem/lyrics -> a full song plan (characters + scenes + mood) that KEEPS your
+    exact words. LLM does the casting (free text); falls back to a basic cast if no LLM/key."""
+    lines = [ln.strip() for ln in lyrics.splitlines() if ln.strip()]
+    if not lines:
+        raise ValueError("no lyrics provided")
+    data: dict = {}
+    try:
+        llm = get_provider(Capability.LLM)
+        raw = await llm.complete(_cast_prompt(lines, language, style),
+                                 system=_CAST_SYSTEM, temperature=0.7, max_tokens=1600)
+        data = _extract_json(raw)
+    except Exception:  # noqa: BLE001 — no LLM/key or bad JSON: fall back to a basic cast
+        data = {}
+    return cast_song_from_lyrics(lines, data)

@@ -186,9 +186,14 @@ export const api = {
     req<{ available: boolean; hint: string; kernel: string | null }>(
       "/generate/gpu-video/availability",
     ),
-  gpuVideo: (body: { prompt: string; style_preset: string; scenes?: number; project_id?: string }) =>
-    req<{ job: Job; kernel: string; note: string }>(
+  gpuVideo: (body: { prompt?: string; lyrics?: string; style_preset: string; scenes?: number; project_id?: string }) =>
+    req<{ job: Job; kernel: string; note: string; usage_warning?: string }>(
       "/generate/gpu-video", { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  fromLyrics: (body: { lyrics: string; style_preset: string; language?: string; safe_mode?: boolean; render?: boolean }) =>
+    req<{ project: Project; song: { title: string; mood: string }; shots: Shot[]; characters: string[]; character_jobs: Job[] }>(
+      "/generate/from-lyrics", { method: "POST", body: JSON.stringify(body) },
     ),
 
   listProjects: () => req<Project[]>("/projects"),

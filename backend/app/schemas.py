@@ -51,9 +51,22 @@ class FromPromptRequest(BaseModel):
     default_background: str = ""
 
 
+class FromLyricsRequest(BaseModel):
+    """Paste YOUR lyrics → a complete music-video project that keeps your exact words; the AI
+    casts fitting characters + scenes. Then render (CPU draft or GPU sung+animated)."""
+    lyrics: str = Field(min_length=1, max_length=5000)
+    style_preset: str = "anime_cyberpunk"
+    language: str = "en"
+    safe_mode: bool = False
+    render: bool = True
+    default_background: str = ""
+
+
 class GpuVideoRequest(BaseModel):
-    """Dispatch the full sung + animated render to a free Kaggle GPU and pull back the MP4."""
-    prompt: str = Field(min_length=1, max_length=2000)
+    """Dispatch the full sung + animated render to a free Kaggle GPU and pull back the MP4.
+    Provide `prompt` (AI writes the song) OR `lyrics` (keeps your words, casts from them)."""
+    prompt: str = Field(default="", max_length=2000)
+    lyrics: str = Field(default="", max_length=5000)
     style_preset: str = "anime_cyberpunk"
     scenes: int = Field(default=6, ge=2, le=12)
     project_id: str | None = None    # attach the resulting video to a project, if given

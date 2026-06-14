@@ -341,7 +341,8 @@ async def handle_gpu_video(job: dict[str, Any], ctx: JobContext) -> dict[str, An
     (ACE-Step singing + LTX animation) can't run on this no-GPU machine, so it runs on Kaggle's
     hardware via a private batch kernel (ToS-safe). One worker is busy for the whole render."""
     payload = job["payload"]
-    prompt = payload["prompt"]
+    prompt = payload.get("prompt", "")
+    lyrics = payload.get("lyrics", "")
     style = payload.get("style_preset", "anime_cyberpunk")
     scenes = int(payload.get("scenes", 6))
     project_id = payload.get("project_id")
@@ -351,7 +352,7 @@ async def handle_gpu_video(job: dict[str, Any], ctx: JobContext) -> dict[str, An
         raise RuntimeError(hint)
 
     ctx.progress(0.03, "dispatching render to Kaggle GPU…")
-    slug = await asyncio.to_thread(kaggle_render.dispatch, prompt, style, scenes)
+    slug = await asyncio.to_thread(kaggle_render.dispatch, prompt, style, scenes, lyrics)
     ctx.progress(0.08, f"queued on Kaggle ({slug}) — this takes ~30-40 min")
 
     loop = asyncio.get_event_loop()
@@ -385,8 +386,9 @@ async def handle_gpu_video(job: dict[str, Any], ctx: JobContext) -> dict[str, An
     asset = models.create_asset(
         kind="video", path=rel, project_id=project_id, mime="video/mp4",
         sha256=hashlib.sha256(data).hexdigest(), provider="kaggle:acestep+ltx",
-        meta={"prompt": prompt, "style": style, "scenes": scenes, "kernel": slug,
-              "source": "kaggle_gpu"},
+        meta={"prompt": prompt or (lyrics.strip().splitlines()[0][:60] if lyrics.strip() else ""),
+              "style": style, "scenes": scenes, "kernel": slug, "source": "kaggle_gpu",
+              "from_lyrics": bool(lyrics.strip())},
     )
     ctx.progress(1.0, "video ready")
     return {"asset_id": asset["id"], "path": rel, "kernel": slug, "bytes": len(data)}

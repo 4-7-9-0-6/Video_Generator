@@ -9,9 +9,59 @@ from .. import foundry, kaggle_render, lore, models, safety, scene, songwriter, 
 from ..jobs import queue
 from ..providers.base import Capability
 from ..providers.registry import ProviderUnavailable, get_provider
-from ..schemas import FromPromptRequest, GpuVideoRequest
+from ..schemas import FromLyricsRequest, FromPromptRequest, GpuVideoRequest
 
 router = APIRouter(tags=["generate"])
+
+
+@router.post("/generate/from-lyrics")
+async def from_lyrics(body: FromLyricsRequest) -> dict:
+    """Paste lyrics → the AI casts characters + scenes (keeping your exact words) → a project
+    ready to render. Casting is free LLM text (with a basic fallback if no key)."""
+    if body.style_preset not in foundry.STYLE_PRESETS:
+        raise HTTPException(422, f"unknown style_preset; choose from {list(foundry.STYLE_PRESETS)}")
+    ip = safety.check_ip(body.lyrics)
+    if not ip.ok:
+        raise HTTPException(422, {"error": ip.reason, "matched": list(ip.matched)})
+    if body.safe_mode and not safety.check_safe_mode(body.lyrics).ok:
+        raise HTTPException(422, {"error": "Blocked by safe mode.", "lyrics": body.lyrics[:200]})
+
+    try:
+        song = await songwriter.cast_from_lyrics(body.lyrics, language=body.language,
+                                                 style=body.style_preset)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    project = models.create_project(song["title"], style_preset=body.style_preset,
+                                    language=body.language, safe_mode=body.safe_mode)
+
+    name_to_id: dict[str, str] = {}
+    char_jobs: list[dict] = []
+    for c in song["characters"]:
+        if not safety.check_ip(c["name"], c["description"]).ok:
+            continue
+        ch = models.create_character(
+            project["id"], c["name"], c["description"], style_preset=body.style_preset,
+            lore=lore.generate_lore(c["name"], c["description"],
+                                    style_preset=body.style_preset, language=body.language),
+        )
+        name_to_id[c["name"]] = ch["id"]
+        if body.render:
+            char_jobs.append(queue.enqueue(
+                "character_sheets",
+                {"character_id": ch["id"], "sheets": ["turnaround", "expressions", "poses"]},
+                project_id=project["id"]))
+
+    for idx, line in enumerate(song["lines"]):
+        char_ids = [name_to_id[n] for n in line["characters"] if n in name_to_id]
+        camera = "bounce_in" if line["section"] == "chorus" else scene._pick_camera(line["text"], idx)
+        models.create_shot(project["id"], idx, line["text"], characters=char_ids, camera=camera,
+                           background=line.get("background") or body.default_background,
+                           duration_s=scene._duration_for(line["text"]))
+
+    shots = models.list_where("shots", "project_id = ?", (project["id"],), "idx ASC")
+    return {"project": project, "song": song, "shots": shots,
+            "characters": list(name_to_id.values()), "character_jobs": char_jobs}
 
 
 @router.get("/generate/gpu-video/availability")
@@ -27,14 +77,16 @@ async def gpu_video(body: GpuVideoRequest) -> dict:
     the MP4 back as a project asset. Returns a job; poll GET /jobs/{id} for progress (~30-40 min)."""
     if body.style_preset not in foundry.STYLE_PRESETS:
         raise HTTPException(422, f"unknown style_preset; choose from {list(foundry.STYLE_PRESETS)}")
-    ip = safety.check_ip(body.prompt)
+    if not body.prompt.strip() and not body.lyrics.strip():
+        raise HTTPException(422, "provide a prompt or lyrics")
+    ip = safety.check_ip(f"{body.prompt}\n{body.lyrics}")
     if not ip.ok:
         raise HTTPException(422, {"error": ip.reason, "matched": list(ip.matched)})
     ok, hint = kaggle_render.availability()
     if not ok:
         raise HTTPException(503, hint)
     job = queue.enqueue("gpu_video", {
-        "prompt": body.prompt, "style_preset": body.style_preset,
+        "prompt": body.prompt, "lyrics": body.lyrics, "style_preset": body.style_preset,
         "scenes": body.scenes, "project_id": body.project_id,
     }, project_id=body.project_id, max_attempts=1)   # one Kaggle run; don't auto-retry a 40-min job
     return {"job": job, "kernel": kaggle_render.kernel_slug(),

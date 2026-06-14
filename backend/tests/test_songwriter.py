@@ -91,3 +91,44 @@ def test_from_prompt_builds_a_full_project(client):
 def test_from_prompt_rejects_unknown_style(client):
     r = client.post("/generate/from-prompt", json={"prompt": "x", "style_preset": "nope"})
     assert r.status_code == 422
+
+
+# ---- lyrics → music video ----
+
+def test_cast_keeps_exact_words_and_detects_chorus():
+    lines = ["Splish splash bubbles", "Splish splash bubbles", "Wash my little toes"]
+    song = songwriter.cast_song_from_lyrics(lines, {})   # no LLM data -> fallback cast
+    assert [ln["text"] for ln in song["lines"]] == lines    # words preserved verbatim
+    assert song["lines"][0]["section"] == "chorus"          # repeated line -> chorus
+    assert song["lines"][2]["section"] == "verse"
+    assert song["characters"]                                # at least a fallback character
+
+
+def test_cast_uses_llm_character_and_background():
+    data = {"title": "Bath Time", "mood": "playful",
+            "characters": [{"name": "Bubbles", "description": "a cheerful blue toddler"}],
+            "lines": [{"n": 1, "section": "verse", "characters": ["Bubbles"], "background": "a sunny bathroom"}]}
+    song = songwriter.cast_song_from_lyrics(["Wash my toes"], data)
+    assert song["lines"][0]["text"] == "Wash my toes"        # unchanged
+    assert song["lines"][0]["characters"] == ["Bubbles"]
+    assert song["lines"][0]["background"] == "a sunny bathroom"
+    assert song["characters"][0]["name"] == "Bubbles"
+
+
+def test_cast_from_lyrics_via_mock_llm():
+    song = asyncio.run(songwriter.cast_from_lyrics("la la la\nla la la\nshine bright"))
+    assert [ln["text"] for ln in song["lines"]] == ["la la la", "la la la", "shine bright"]
+
+
+def test_from_lyrics_builds_project_keeping_words(client):
+    lyrics = "Splish splash bubbles\nSplish splash bubbles\nWash my little toes"
+    r = client.post("/generate/from-lyrics", json={"lyrics": lyrics, "style_preset": "anime_cute", "render": False})
+    assert r.status_code == 200
+    body = r.json()
+    shots = client.get(f"/projects/{body['project']['id']}/shots").json()
+    assert [s["text"] for s in shots] == ["Splish splash bubbles", "Splish splash bubbles", "Wash my little toes"]
+
+
+def test_from_lyrics_rejects_empty(client):
+    r = client.post("/generate/from-lyrics", json={"lyrics": "   "})
+    assert r.status_code == 422
