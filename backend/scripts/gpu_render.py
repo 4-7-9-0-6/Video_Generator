@@ -17,15 +17,27 @@ Providers are chosen by env (the notebook sets them):
 """
 from __future__ import annotations
 
-# Pre-Ampere GPUs (T4/P100, the free-tier cards) have no cuDNN bf16 convolution engine, so the
-# ACE-Step and LTX VAE/vocoder decodes crash ("unable to find an engine to execute this
-# computation"). Those convs are small and run once, so disabling cuDNN routes them to the
-# native bf16 kernel at negligible cost and keeps the models in fast bf16.
+# Pre-Ampere GPUs (T4/P100, the free-tier cards) lack a usable half-precision convolution kernel
+# for some shapes, so the ACE-Step and LTX VAE/vocoder decodes crash with "GET was unable to find
+# an engine to execute this computation" — and disabling cuDNN alone doesn't help (the native
+# bf16 conv path is missing too). Fix: wrap F.conv2d so half-precision convs run in fp32 (which
+# always has a kernel) and cast the result back. These convs are small and run once, so the cost
+# is negligible; the big diffusion transformer is attention-based and untouched.
 try:
     import torch as _torch
+    import torch.nn.functional as _F
     if _torch.cuda.is_available() and _torch.cuda.get_device_capability(0)[0] < 8:
         _torch.backends.cudnn.enabled = False
-except Exception:  # noqa: BLE001 — torch absent (CPU box) or driver issue: nothing to disable
+        _orig_conv2d = _F.conv2d
+
+        def _conv2d_fp32(inp, weight, bias=None, *a, **k):
+            if inp.is_cuda and inp.dtype in (_torch.float16, _torch.bfloat16):
+                b = bias.float() if bias is not None else None
+                return _orig_conv2d(inp.float(), weight.float(), b, *a, **k).to(inp.dtype)
+            return _orig_conv2d(inp, weight, bias, *a, **k)
+
+        _F.conv2d = _conv2d_fp32
+except Exception:  # noqa: BLE001 — torch absent (CPU box) or driver issue: nothing to patch
     pass
 
 import argparse
