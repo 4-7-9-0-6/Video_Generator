@@ -17,29 +17,6 @@ Providers are chosen by env (the notebook sets them):
 """
 from __future__ import annotations
 
-# Pre-Ampere GPUs (T4/P100, the free-tier cards) lack a usable half-precision convolution kernel
-# for some shapes, so the ACE-Step and LTX VAE/vocoder decodes crash with "GET was unable to find
-# an engine to execute this computation" — and disabling cuDNN alone doesn't help (the native
-# bf16 conv path is missing too). Fix: wrap F.conv2d so half-precision convs run in fp32 (which
-# always has a kernel) and cast the result back. These convs are small and run once, so the cost
-# is negligible; the big diffusion transformer is attention-based and untouched.
-try:
-    import torch as _torch
-    import torch.nn.functional as _F
-    if _torch.cuda.is_available() and _torch.cuda.get_device_capability(0)[0] < 8:
-        _torch.backends.cudnn.enabled = False
-        _orig_conv2d = _F.conv2d
-
-        def _conv2d_fp32(inp, weight, bias=None, *a, **k):
-            if inp.is_cuda and inp.dtype in (_torch.float16, _torch.bfloat16):
-                b = bias.float() if bias is not None else None
-                return _orig_conv2d(inp.float(), weight.float(), b, *a, **k).to(inp.dtype)
-            return _orig_conv2d(inp, weight, bias, *a, **k)
-
-        _F.conv2d = _conv2d_fp32
-except Exception:  # noqa: BLE001 — torch absent (CPU box) or driver issue: nothing to patch
-    pass
-
 import argparse
 import asyncio
 import subprocess
@@ -49,6 +26,7 @@ from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app import _gpu_compat  # noqa: F401,E402 — fp32-conv shim for T4/P100 (applied on import)
 from app import foundry, scene, songwriter           # noqa: E402
 from app.compose import build_srt, group_words_to_cues  # noqa: E402
 from app.ffmpeg_util import ffmpeg_exe                # noqa: E402
@@ -82,28 +60,31 @@ async def render(topic: str, lyrics_text: str, style: str, scenes: int, lipsync:
     lyric_lines = [ln["text"] for ln in song["lines"]]
     print(f"[1/5] song '{song['title']}' — {len(lyric_lines)} lines", flush=True)
 
-    # 2. ACE-Step sings the whole song (vocals + music) once
+    # 2. ACE-Step sings the whole song (vocals + music) once.
+    # Run it in a SEPARATE process: ACE-Step (~7 GB) and LTX-Video don't co-fit on a 15 GB T4, and
+    # merely dropping the Python reference doesn't reclaim its VRAM. When the child process exits,
+    # the OS frees every byte of its GPU memory, leaving the whole card free for LTX below.
     full_lyrics = "\n".join(f"[{ln['section']}] {ln['text']}" for ln in song["lines"])
-    sung = await svs.sing(full_lyrics, language="en", mood=song["mood"],
-                          duration_s=max(20, len(lyric_lines) * 6))
-    print(f"[2/5] ACE-Step sung track: {len(sung.data) // 1024} KB", flush=True)
-
-    # ACE-Step (~7 GB) and LTX-Video don't co-fit on a 15 GB T4, so release the singer from GPU
-    # memory now that the track is rendered — the video model then loads into the freed space.
-    import gc
-    import app.providers.svs.acestep_local as _ace
-    _ace._pipe = None
-    gc.collect()
-    try:
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except Exception:  # noqa: BLE001 — no torch / no CUDA: nothing to free
-        pass
 
     with TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
-        (tmpd / "song.wav").write_bytes(sung.data)
+        if svs.info.requires_gpu:
+            lyr_file = tmpd / "lyrics.txt"
+            lyr_file.write_text(full_lyrics, encoding="utf-8")
+            sing_script = Path(__file__).resolve().parent / "_sing_once.py"
+            sp = subprocess.run(
+                [sys.executable, str(sing_script), str(lyr_file), str(song["mood"]),
+                 str(max(20, len(lyric_lines) * 6)), str(tmpd / "song.wav")],
+                capture_output=True, text=True)
+            if sp.returncode != 0 or not (tmpd / "song.wav").exists():
+                raise RuntimeError(f"singing process failed:\n{(sp.stderr or sp.stdout)[-1500:]}")
+        else:
+            # CPU SVS (tts_pitch) — no isolation needed, render in-process
+            sung = await svs.sing(full_lyrics, language="en", mood=song["mood"],
+                                  duration_s=max(20, len(lyric_lines) * 6))
+            (tmpd / "song.wav").write_bytes(sung.data)
+        print(f"[2/5] ACE-Step sung track: {(tmpd / 'song.wav').stat().st_size // 1024} KB",
+              flush=True)
         # song duration -> even time slice per shot
         probe = subprocess.run(
             [ff.replace("ffmpeg", "ffprobe"), "-v", "error", "-show_entries",
