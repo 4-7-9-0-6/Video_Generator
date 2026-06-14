@@ -103,6 +103,12 @@ class Settings:
     flux_steps: int = field(default_factory=lambda: int(_env("FLUX_STEPS", "4")))
     ltx_model: str = field(default_factory=lambda: _env("LTX_MODEL", "Lightricks/LTX-Video"))
     ltx_steps: int = field(default_factory=lambda: int(_env("LTX_STEPS", "40")))
+    # LTX attention memory grows with (frames x width x height)^2. These caps keep a single
+    # attention matrix within a 16 GB T4; the final clip is scaled back to the export size by
+    # ffmpeg, so only motion detail is affected. Raise them on a bigger GPU.
+    ltx_max_width: int = field(default_factory=lambda: int(_env("LTX_MAX_WIDTH", "640")))
+    ltx_max_height: int = field(default_factory=lambda: int(_env("LTX_MAX_HEIGHT", "384")))
+    ltx_max_frames: int = field(default_factory=lambda: int(_env("LTX_MAX_FRAMES", "49")))
     xtts_model: str = field(default_factory=lambda: _env("XTTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"))
     xtts_speaker_wav: str = field(default_factory=lambda: _env("XTTS_SPEAKER_WAV", ""))
     musicgen_model: str = field(default_factory=lambda: _env("MUSICGEN_MODEL", "facebook/musicgen-small"))

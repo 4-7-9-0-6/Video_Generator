@@ -65,10 +65,14 @@ class LTXLocalVideoProvider(VideoProvider):
 
         pipe = self._load()
         img = Image.open(io.BytesIO(image)).convert("RGB")
-        w = max(256, (int(kw.get("width", img.width)) // 32) * 32)    # LTX needs /32
-        h = max(256, (int(kw.get("height", img.height)) // 32) * 32)
-        # LTX wants num_frames of the form 8*k + 1
-        nf = max(9, int(duration_s * fps))
+        # Clamp to the LTX caps first (attention memory ~ (frames*w*h)^2): a single attention
+        # matrix must fit the GPU. ffmpeg scales the clip back to the export size afterward.
+        req_w = min(int(kw.get("width", img.width)), settings.ltx_max_width)
+        req_h = min(int(kw.get("height", img.height)), settings.ltx_max_height)
+        w = max(256, (req_w // 32) * 32)    # LTX needs /32
+        h = max(256, (req_h // 32) * 32)
+        # LTX wants num_frames of the form 8*k + 1, capped so the clip fits in VRAM
+        nf = max(9, min(int(duration_s * fps), settings.ltx_max_frames))
         nf = ((nf - 1) // 8) * 8 + 1
         gen = torch.Generator("cpu").manual_seed(int(kw.get("seed", 0)))
         full_prompt = prompt or f"{motion} camera motion, gentle natural movement, cinematic"
