@@ -15,12 +15,20 @@ def export_presets() -> dict:
     return {name: {"width": w, "height": h} for name, (w, h) in compose.EXPORT_PRESETS.items()}
 
 
+@router.get("/export/grades")
+def export_grades() -> list[str]:
+    """Available color-grade 'looks' for export (free, FFmpeg-based)."""
+    return list(compose.GRADE_PRESETS)
+
+
 @router.post("/projects/{project_id}/export")
 def export_episode(project_id: str, body: ExportRequest) -> dict:
     if models.get("projects", project_id) is None:
         raise HTTPException(404, "project not found")
     if body.preset not in compose.EXPORT_PRESETS:
         raise HTTPException(422, f"preset must be one of {list(compose.EXPORT_PRESETS)}")
+    if body.grade not in compose.GRADE_PRESETS:
+        raise HTTPException(422, f"grade must be one of {list(compose.GRADE_PRESETS)}")
     shots = models.list_where("shots", "project_id = ? AND keyframe_id IS NOT NULL", (project_id,))
     if not shots:
         raise HTTPException(409, "no shots have keyframes yet — render keyframes first")
@@ -32,6 +40,7 @@ def export_episode(project_id: str, body: ExportRequest) -> dict:
         "word_subtitles": body.word_subtitles, "music": body.music,
         "music_auto": body.music_auto, "music_description": body.music_description,
         "music_tempo": body.music_tempo, "smart_reframe": body.smart_reframe,
+        "grade": body.grade,
     }, project_id=project_id)
 
 

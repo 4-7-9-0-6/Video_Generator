@@ -27,6 +27,21 @@ EXPORT_PRESETS: dict[str, tuple[int, int]] = {
     "youtube_1080p": (1920, 1080),
     "youtube_4k": (3840, 2160),
     "shorts_1080x1920": (1080, 1920),
+    "tiktok_1080x1920": (1080, 1920),
+    "instagram_reel": (1080, 1920),
+    "instagram_square": (1080, 1080),
+    "instagram_portrait": (1080, 1350),
+}
+
+# color-grade "look" presets — pure FFmpeg video filters (free, CPU). Applied in the final pass.
+GRADE_PRESETS: dict[str, str] = {
+    "none": "",
+    "warm": "eq=saturation=1.12,colorbalance=rm=0.06:gm=0.02:bm=-0.06",
+    "cool": "eq=saturation=1.08,colorbalance=rm=-0.06:bm=0.06",
+    "cinematic": "curves=preset=medium_contrast,colorbalance=rs=-0.08:bs=0.08:rm=0.04:bm=-0.04,eq=saturation=1.1",
+    "vivid": "eq=contrast=1.08:saturation=1.35",
+    "noir": "hue=s=0,eq=contrast=1.22:brightness=0.02",
+    "vintage": "curves=preset=vintage,eq=saturation=0.92",
 }
 
 ProgressCb = Callable[[float, str], None]
@@ -90,6 +105,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                            sing_vibrato: float = 0.3, key_override: str = "",
                            tempo_override: int = 0, lipsync: bool = False,
                            preset: str = "youtube_1080p", smart_reframe: bool = True,
+                           grade: str = "none",
                            progress: ProgressCb = lambda f, m: None) -> dict[str, Any]:
     if not has_ffmpeg():
         raise RuntimeError("ffmpeg not installed — run: python scripts/install_ffmpeg.py")
@@ -256,11 +272,21 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
             srt_text = build_srt(entries)
         else:
             srt_text = ""
+
+        # final video-filter pass — subtitles + color grade are both video filters, so one
+        # re-encode handles both (audio is copied through untouched).
+        vf_parts: list[str] = []
         if srt_text:
-            progress(0.95, "subtitles")
             (tmp / "subs.srt").write_text(srt_text, encoding="utf-8")
-            await _run([ff, "-y", "-i", current, "-vf", "subtitles=subs.srt",
-                        "-c:a", "copy", "final.mp4"], tmp)
+            vf_parts.append("subtitles=subs.srt")
+        grade_vf = GRADE_PRESETS.get(grade, "")
+        if grade_vf:
+            vf_parts.append(grade_vf)
+        if vf_parts:
+            progress(0.95, "subtitles + grade" if grade_vf and srt_text else
+                     ("color grade" if grade_vf else "subtitles"))
+            await _run([ff, "-y", "-i", current, "-vf", ",".join(vf_parts),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy", "final.mp4"], tmp)
             current = "final.mp4"
 
         data = (tmp / current).read_bytes()
@@ -279,6 +305,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
               "subtitles": bool(srt_text),
               "word_subtitles": used_word_subs, "music": music,
               "smart_reframe": smart_reframe, "animated": animated, "lipsync": lipsync,
+              "grade": grade if GRADE_PRESETS.get(grade) else "none",
               "video_provider": ("lipsync_mouth_flap" if lipsync else
                                  (video.info.name if animated else "ffmpeg_kenburns")),
               "music_auto": music_auto and music, "music_mood": music_mood,

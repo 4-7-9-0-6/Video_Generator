@@ -132,3 +132,4 @@ class ExportRequest(BaseModel):
     music_description: str = "gentle cheerful children's nursery music"
     music_tempo: int = Field(default=96, ge=40, le=200)
     smart_reframe: bool = True   # content-aware crop to the export aspect (e.g. 16:9 -> 9:16 Shorts)
+    grade: str = "none"          # color-grade look: none/warm/cool/cinematic/vivid/noir/vintage

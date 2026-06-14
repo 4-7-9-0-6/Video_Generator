@@ -280,6 +280,7 @@ async def handle_episode_assemble(job: dict[str, Any], ctx: JobContext) -> dict[
         music_tempo=payload.get("music_tempo", 96),
         preset=payload.get("preset", "youtube_1080p"),
         smart_reframe=payload.get("smart_reframe", True),
+        grade=payload.get("grade", "none"),
         progress=lambda f, m: ctx.progress(f, m),
     )
     ctx.progress(1.0, "episode ready")

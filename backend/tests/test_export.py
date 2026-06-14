@@ -125,3 +125,18 @@ def test_assemble_episode_makes_mp4(mock_image):
     assert b"ftyp" in data[:32]                # valid MP4 container
     assert res["duration_s"] >= 1.5
     assert "srt_asset_id" in res              # subtitles produced
+
+
+def test_grades_and_presets_endpoints():
+    c = TestClient(app)  # plain client (no lifespan/worker needed for these read endpoints)
+    grades = c.get("/export/grades").json()
+    assert "none" in grades and "cinematic" in grades and "warm" in grades
+    presets = c.get("/export/presets").json()
+    assert "tiktok_1080x1920" in presets and "instagram_square" in presets
+
+
+def test_export_rejects_unknown_grade():
+    project = models.create_project("Ep", width=480, height=270, fps=12)
+    c = TestClient(app)
+    r = c.post(f"/projects/{project['id']}/export", json={"preset": "youtube_1080p", "grade": "bogus"})
+    assert r.status_code == 422 and "grade" in str(r.json()).lower()
