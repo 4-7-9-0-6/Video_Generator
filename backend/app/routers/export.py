@@ -21,6 +21,12 @@ def export_grades() -> list[str]:
     return list(compose.GRADE_PRESETS)
 
 
+@router.get("/export/transitions")
+def export_transitions() -> list[str]:
+    """Available shot-to-shot transitions (free, FFmpeg xfade)."""
+    return list(compose.TRANSITIONS)
+
+
 @router.post("/projects/{project_id}/export")
 def export_episode(project_id: str, body: ExportRequest) -> dict:
     if models.get("projects", project_id) is None:
@@ -29,6 +35,8 @@ def export_episode(project_id: str, body: ExportRequest) -> dict:
         raise HTTPException(422, f"preset must be one of {list(compose.EXPORT_PRESETS)}")
     if body.grade not in compose.GRADE_PRESETS:
         raise HTTPException(422, f"grade must be one of {list(compose.GRADE_PRESETS)}")
+    if body.transition not in compose.TRANSITIONS:
+        raise HTTPException(422, f"transition must be one of {list(compose.TRANSITIONS)}")
     shots = models.list_where("shots", "project_id = ? AND keyframe_id IS NOT NULL", (project_id,))
     if not shots:
         raise HTTPException(409, "no shots have keyframes yet — render keyframes first")
@@ -40,7 +48,7 @@ def export_episode(project_id: str, body: ExportRequest) -> dict:
         "word_subtitles": body.word_subtitles, "music": body.music,
         "music_auto": body.music_auto, "music_description": body.music_description,
         "music_tempo": body.music_tempo, "smart_reframe": body.smart_reframe,
-        "grade": body.grade,
+        "grade": body.grade, "transition": body.transition,
     }, project_id=project_id)
 
 

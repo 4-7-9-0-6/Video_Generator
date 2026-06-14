@@ -140,3 +140,18 @@ def test_export_rejects_unknown_grade():
     c = TestClient(app)
     r = c.post(f"/projects/{project['id']}/export", json={"preset": "youtube_1080p", "grade": "bogus"})
     assert r.status_code == 422 and "grade" in str(r.json()).lower()
+
+
+def test_xfade_chain_offsets():
+    fc, vlab, alab = compose._xfade_chain(3, [4.0, 4.0, 4.0], 0.4, "fade")
+    assert "offset=3.600" in fc and "offset=7.200" in fc       # cumulative, minus overlaps
+    assert "acrossfade=d=0.400" in fc and vlab == "vx2" and alab == "ax2"
+
+
+def test_transitions_endpoint_and_validation():
+    c = TestClient(app)
+    trans = c.get("/export/transitions").json()
+    assert "none" in trans and "fade" in trans and "dissolve" in trans
+    project = models.create_project("Ep", width=480, height=270, fps=12)
+    r = c.post(f"/projects/{project['id']}/export", json={"preset": "youtube_1080p", "transition": "bogus"})
+    assert r.status_code == 422 and "transition" in str(r.json()).lower()

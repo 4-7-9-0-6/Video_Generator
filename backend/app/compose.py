@@ -44,7 +44,29 @@ GRADE_PRESETS: dict[str, str] = {
     "vintage": "curves=preset=vintage,eq=saturation=0.92",
 }
 
+# shot-to-shot transitions — names map straight to FFmpeg xfade (free, CPU). "none" = hard cuts.
+TRANSITIONS: tuple[str, ...] = (
+    "none", "fade", "fadeblack", "dissolve", "slideleft", "wipeleft", "circleopen", "smoothleft",
+)
+
 ProgressCb = Callable[[float, str], None]
+
+
+def _xfade_chain(n: int, durs: list[float], td: float, transition: str) -> tuple[str, str, str]:
+    """Build a filter_complex that xfades n segment inputs (each with v+a) into one stream.
+    Returns (filter_complex, final_video_label, final_audio_label). Video uses xfade with the
+    right cumulative offsets; audio uses acrossfade (auto-timed)."""
+    v_parts, a_parts = [], []
+    prev_v, prev_a = "0:v", "0:a"
+    cum = durs[0]
+    for k in range(1, n):
+        offset = max(0.0, cum - td)
+        vout, aout = f"vx{k}", f"ax{k}"
+        v_parts.append(f"[{prev_v}][{k}:v]xfade=transition={transition}:duration={td:.3f}:offset={offset:.3f}[{vout}]")
+        a_parts.append(f"[{prev_a}][{k}:a]acrossfade=d={td:.3f}[{aout}]")
+        prev_v, prev_a = vout, aout
+        cum = cum + durs[k] - td
+    return ";".join(v_parts + a_parts), prev_v, prev_a
 
 
 def _ts(seconds: float) -> str:
@@ -105,7 +127,8 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                            sing_vibrato: float = 0.3, key_override: str = "",
                            tempo_override: int = 0, lipsync: bool = False,
                            preset: str = "youtube_1080p", smart_reframe: bool = True,
-                           grade: str = "none",
+                           grade: str = "none", transition: str = "none",
+                           transition_dur: float = 0.4,
                            progress: ProgressCb = lambda f, m: None) -> dict[str, Any]:
     if not has_ffmpeg():
         raise RuntimeError("ffmpeg not installed — run: python scripts/install_ffmpeg.py")
@@ -128,7 +151,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
     if video is not None and not video.availability().available:
         video = None
     animated = video is not None
-    word_stamps: list[tuple[str, float, float]] = []
+    word_stamps: list[tuple[str, float, float, int]] = []   # (word, start, end, shot_index)
     word_mode = align is not None
 
     w, h = EXPORT_PRESETS.get(preset, (project["width"], project["height"]))
@@ -152,6 +175,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
     with TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         seg_names: list[str] = []
+        seg_durs: list[float] = []
 
         for i, shot in enumerate(usable):
             progress(i / (len(usable) + 1), f"rendering shot {i + 1}/{len(usable)}")
@@ -178,7 +202,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                     try:
                         for s in await align.align(res.data, text=shot["text"],
                                                    language=project["language"]):
-                            word_stamps.append((s.word, timeline + s.start, timeline + s.end))
+                            word_stamps.append((s.word, timeline + s.start, timeline + s.end, i))
                     except Exception:  # noqa: BLE001 — fall back to line-level subtitles
                         word_mode = False
 
@@ -190,6 +214,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                     framed, res.data, duration_s=seg_dur, fps=fps, width=w, height=h)
                 (tmp / f"seg{i}.mp4").write_bytes(talk)
                 seg_names.append(f"seg{i}.mp4")
+                seg_durs.append(seg_dur)
                 srt_entries.append((shot.get("text", ""), timeline, timeline + seg_dur))
                 timeline += seg_dur
                 continue
@@ -225,14 +250,39 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                         "-map", "[v]", "-map", "1:a", *common_tail]
             await _run(args, tmp)
             seg_names.append(f"seg{i}.mp4")
+            seg_durs.append(seg_dur)
             srt_entries.append((shot.get("text", ""), timeline, timeline + seg_dur))
             timeline += seg_dur
 
+        # stitch: hard-cut concat (fast, lossless copy) OR xfade transitions (re-encode, overlaps
+        # clips by `td`, which compresses the timeline — subtitles/music are shifted to match).
         progress(len(usable) / (len(usable) + 1), "stitching")
-        (tmp / "list.txt").write_text("".join(f"file '{n}'\n" for n in seg_names), encoding="utf-8")
-        await _run([ff, "-y", "-f", "concat", "-safe", "0", "-i", "list.txt",
-                    "-c", "copy", "episode.mp4"], tmp)
+        n = len(seg_names)
+        td = 0.0
+        transitions_on = transition in TRANSITIONS and transition != "none" and n > 1
+        if transitions_on:
+            td = max(0.1, min(transition_dur, (min(seg_durs) / 2) - 0.05))
+            fc, vlab, alab = _xfade_chain(n, seg_durs, td, transition)
+            inputs: list[str] = []
+            for nm in seg_names:
+                inputs += ["-i", nm]
+            await _run([ff, "-y", *inputs, "-filter_complex", fc,
+                        "-map", f"[{vlab}]", "-map", f"[{alab}]", "-r", str(fps),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        "-c:a", "aac", "-ar", "44100", "-ac", "2", "episode.mp4"], tmp)
+        else:
+            (tmp / "list.txt").write_text("".join(f"file '{nm}'\n" for nm in seg_names), encoding="utf-8")
+            await _run([ff, "-y", "-f", "concat", "-safe", "0", "-i", "list.txt",
+                        "-c", "copy", "episode.mp4"], tmp)
         current = "episode.mp4"
+
+        # with transitions the video is shorter by (n-1)*td, and shot k starts k*td earlier
+        final_total = timeline - (n - 1) * td if transitions_on else timeline
+        if transitions_on:
+            srt_entries = [(t, max(0.0, s - k * td), max(0.0, e - k * td))
+                           for k, (t, s, e) in enumerate(srt_entries)]
+            word_stamps = [(w, max(0.0, s - si * td), max(0.0, e - si * td), si)
+                           for (w, s, e, si) in word_stamps]
 
         # music bed, auto-ducked under the vocals (sidechain compression)
         music_mood = None
@@ -251,9 +301,9 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
             if tempo_override:
                 music_tempo = tempo_override
             progress(0.9, f"music bed ({music_mood or 'custom'})")
-            notes, _info = melody_notes(music_description, duration_s=timeline,
+            notes, _info = melody_notes(music_description, duration_s=final_total,
                                         key=music_key, tempo=music_tempo)
-            (tmp / "music.wav").write_bytes(music_synth.synth_wav(notes, total_s=timeline))
+            (tmp / "music.wav").write_bytes(music_synth.synth_wav(notes, total_s=final_total))
             await _run([
                 ff, "-y", "-i", current, "-i", "music.wav", "-filter_complex",
                 "[0:a]asplit=2[voa][vob];"
@@ -268,7 +318,8 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
         # subtitles: word-level cues when aligned, else line-level from shot timing
         used_word_subs = bool(word_mode and word_stamps)
         if subtitles:
-            entries = group_words_to_cues(word_stamps) if used_word_subs else srt_entries
+            ws3 = [(w, s, e) for (w, s, e, _si) in word_stamps]   # drop the shot-index tag
+            entries = group_words_to_cues(ws3) if used_word_subs else srt_entries
             srt_text = build_srt(entries)
         else:
             srt_text = ""
@@ -298,7 +349,8 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
         kind="video", path=rel, project_id=project["id"], mime="video/mp4",
         provider="ffmpeg",
         meta={"kind": "episode", "preset": preset, "resolution": f"{w}x{h}",
-              "fps": fps, "shots": len(usable), "duration_s": round(timeline, 2),
+              "fps": fps, "shots": len(usable), "duration_s": round(final_total, 2),
+              "transition": transition if transitions_on else "none",
               "voice": (svs or tts) is not None, "sing": svs is not None,
               "sing_key": sing_key if svs is not None else None,
               "sing_vibrato": sing_vibrato if svs is not None else None,
@@ -313,7 +365,7 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
     )
 
     result = {"asset_id": asset["id"], "url": f"/assets/{asset['id']}",
-              "duration_s": round(timeline, 2), "resolution": f"{w}x{h}",
+              "duration_s": round(final_total, 2), "resolution": f"{w}x{h}",
               "preset": preset, "shots": len(usable),
               "word_subtitles": used_word_subs, "music": music}
     if srt_bytes:

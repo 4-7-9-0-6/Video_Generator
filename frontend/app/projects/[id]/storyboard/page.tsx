@@ -21,6 +21,8 @@ export default function StoryboardPage() {
   const [preset, setPreset] = useState("youtube_1080p");
   const [grades, setGrades] = useState<string[]>(["none"]);
   const [grade, setGrade] = useState("none");
+  const [transitions, setTransitions] = useState<string[]>(["none"]);
+  const [transition, setTransition] = useState("none");
   const [withVoice, setWithVoice] = useState(true);
   const [withSing, setWithSing] = useState(false);
   const [withLipsync, setWithLipsync] = useState(false);
@@ -87,6 +89,7 @@ export default function StoryboardPage() {
     api.motionPresets().then((m) => setCameras(Object.keys(m))).catch(() => {});
     api.exportPresets().then((p) => setPresets(Object.keys(p))).catch(() => {});
     api.exportGrades().then(setGrades).catch(() => {});
+    api.exportTransitions().then(setTransitions).catch(() => {});
     api.listThumbnails(id).then(setThumbs).catch(() => {});
     refreshCost();
     tick();
@@ -104,7 +107,7 @@ export default function StoryboardPage() {
         preset, voice: withVoice, sing: withSing,
         sing_key: singKey, sing_tempo: singTempo, sing_vibrato: singVibrato,
         lipsync: withLipsync, subtitles: withSubs, word_subtitles: wordSubs,
-        music: withMusic, music_auto: true, smart_reframe: smartReframe, grade,
+        music: withMusic, music_auto: true, smart_reframe: smartReframe, grade, transition,
       });
       setExportJob(job);
       while (job.status === "queued" || job.status === "running") {
@@ -266,6 +269,9 @@ export default function StoryboardPage() {
             </select>
             <select value={grade} onChange={(e) => setGrade(e.target.value)} style={{ width: "auto" }} title="color-grade look">
               {grades.map((g) => <option key={g} value={g}>{g === "none" ? "no grade" : `🎨 ${g}`}</option>)}
+            </select>
+            <select value={transition} onChange={(e) => setTransition(e.target.value)} style={{ width: "auto" }} title="shot-to-shot transition">
+              {transitions.map((t) => <option key={t} value={t}>{t === "none" ? "hard cuts" : `↔ ${t}`}</option>)}
             </select>
             <label className="row" style={{ margin: 0, width: "auto", color: "var(--text)" }}>
               <input type="checkbox" checked={withVoice} onChange={(e) => setWithVoice(e.target.checked)} style={{ width: "auto", marginRight: 6 }} />
