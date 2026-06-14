@@ -35,7 +35,9 @@ and optionally **SadTalker** (lip-sync).
 !git clone https://${GITHUB_TOKEN:+$GITHUB_TOKEN@}github.com/4-7-9-0-6/Video_Generator.git || true
 %cd Video_Generator/backend
 !pip install -q -r requirements.txt
-!pip install -q "diffusers>=0.32" "transformers>=4.44" accelerate sentencepiece imageio[ffmpeg] acestep
+!pip install -q "diffusers>=0.32" "transformers>=4.44" accelerate sentencepiece "imageio[ffmpeg]"
+# ACE-Step (real singing) installs from GitHub — there is no `acestep` package on PyPI:
+!pip install -q "git+https://github.com/ace-step/ACE-Step.git"
 ```
 
 **Cell 2 — GPU check + your free keys**

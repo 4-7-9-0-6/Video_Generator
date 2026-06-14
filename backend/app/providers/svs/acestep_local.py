@@ -5,8 +5,9 @@ sung track (vocals AND backing music together). Unlike the CPU `tts_pitch` (whic
 speech and sounds narrated), this actually *sings*. Used at the EPISODE level by
 scripts/gpu_render.py — one call makes the whole song; the visuals are timed to it.
 
-Needs an NVIDIA GPU (~8-12 GB, fits a free T4) + `pip install acestep`. Checkpoints download
-from Hugging Face on first use. Select with PROVIDER_SVS=acestep_local.
+Needs an NVIDIA GPU (~8-12 GB, fits a free T4) + ACE-Step installed from GitHub
+(`pip install git+https://github.com/ace-step/ACE-Step.git` — there is no `acestep` package
+on PyPI). Checkpoints download from Hugging Face on first use. Select with PROVIDER_SVS=acestep_local.
 
 NOTE: built against the documented ACE-Step API but not runtime-tested on a GPU here — the
 first GPU run may need a minor signature tweak (the pipeline's kwargs vary across versions).
