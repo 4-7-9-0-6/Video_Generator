@@ -21,6 +21,7 @@ export default function Home() {
   const [gpuJob, setGpuJob] = useState<Job | null>(null);
   const [gpuBusy, setGpuBusy] = useState(false);
   const [gpuVideoId, setGpuVideoId] = useState<string | null>(null);
+  const [usage, setUsage] = useState<Awaited<ReturnType<typeof api.usage>> | null>(null);
 
   const llmReady = providers.some((p) => p.capability === "llm" && p.selected && p.available);
   const ready = mode === "fast" ? llmReady : !!gpuAvail?.available;
@@ -31,6 +32,7 @@ export default function Home() {
       .then(([p, sty]) => { setProviders(p.providers); setStyles(sty); setErr(""); })
       .catch((e) => setErr(`Backend not reachable — start it on port 8000.  (${String(e)})`));
     api.gpuVideoAvailability().then(setGpuAvail).catch(() => setGpuAvail(null));
+    api.usage().then(setUsage).catch(() => setUsage(null));
   }, []);
 
   async function onCreate() {
@@ -124,6 +126,14 @@ export default function Home() {
           {modeCard("fast", "⚡", "Fast", "instant · on your PC · narrated voice + pan/zoom · free")}
           {modeCard("gpu", "✨", "Best", "~35 min · free GPU · real singing + animation")}
         </div>
+        {mode === "gpu" && usage && (
+          <p className="caption" style={{ textAlign: "left", marginTop: 6,
+            color: usage.kaggle.over_limit ? "var(--err)" : usage.kaggle.near_limit ? "var(--warn)" : "var(--muted)" }}>
+            Free GPU budget: ≈{usage.kaggle.est_renders_left} render{usage.kaggle.est_renders_left === 1 ? "" : "s"} left this week
+            ({usage.kaggle.renders_this_week} used).
+            {usage.kaggle.over_limit && " You may have hit your weekly limit — renders could queue/fail until it resets."}
+          </p>
+        )}
 
         <div className="row" style={{ marginTop: 16, alignItems: "center", gap: 12 }}>
           <button onClick={onCreate} disabled={busy || !prompt.trim() || !ready} style={{ fontSize: 15, padding: "11px 22px" }}>

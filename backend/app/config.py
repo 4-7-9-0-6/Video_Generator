@@ -86,6 +86,10 @@ class Settings:
     kaggle_kernel_slug: str = field(default_factory=lambda: _env("KAGGLE_KERNEL_SLUG", ""))  # "" -> <username>/toonforge-render
     kaggle_poll_interval_s: float = field(default_factory=lambda: float(_env("KAGGLE_POLL_INTERVAL_S", "30")))
     kaggle_timeout_s: float = field(default_factory=lambda: float(_env("KAGGLE_TIMEOUT_S", "3600")))
+    # Free-tier usage guard (env-tunable) — protect Cloudflare + Kaggle free quotas
+    cloudflare_daily_image_budget: int = field(default_factory=lambda: int(_env("CLOUDFLARE_DAILY_IMAGE_BUDGET", "300")))
+    kaggle_weekly_gpu_minutes: int = field(default_factory=lambda: int(_env("KAGGLE_WEEKLY_GPU_MINUTES", "1800")))  # ~30h
+    kaggle_minutes_per_render: int = field(default_factory=lambda: int(_env("KAGGLE_MINUTES_PER_RENDER", "45")))
 
     # piper
     piper_models_dir: Path = field(default_factory=lambda: _resolve(_env("PIPER_MODELS_DIR", "./models/piper")))

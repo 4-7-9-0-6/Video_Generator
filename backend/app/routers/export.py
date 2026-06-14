@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from .. import compose, models, music_brief, social_pack
+from .. import compose, models, music_brief, social_pack, usage
 from ..jobs import queue
 from ..schemas import ExportRequest
 
@@ -66,6 +66,12 @@ async def social_pack_for_project(project_id: str, platform: str = "youtube") ->
     return await social_pack.generate_pack(
         project["name"], lyrics, style=project.get("style_preset", ""),
         language=project.get("language", "en"), platform=platform)
+
+
+@router.get("/usage")
+def usage_summary() -> dict:
+    """Free-tier consumption vs limits (Cloudflare images today, Kaggle GPU this week)."""
+    return usage.summary()
 
 
 @router.get("/projects/{project_id}/cost")

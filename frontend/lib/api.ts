@@ -176,6 +176,12 @@ export const api = {
   },
   deleteAsset: (id: string) => req<{ deleted: string }>(`/assets/${id}`, { method: "DELETE" }),
 
+  usage: () =>
+    req<{
+      cloudflare: { images_today: number; daily_budget: number; remaining: number; near_limit: boolean; over_limit: boolean };
+      kaggle: { renders_this_week: number; est_renders_left: number; remaining_minutes: number; near_limit: boolean; over_limit: boolean };
+    }>("/usage"),
+
   gpuVideoAvailability: () =>
     req<{ available: boolean; hint: string; kernel: string | null }>(
       "/generate/gpu-video/availability",

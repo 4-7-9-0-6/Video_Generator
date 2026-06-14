@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from .. import foundry, kaggle_render, lore, models, safety, scene, songwriter
+from .. import foundry, kaggle_render, lore, models, safety, scene, songwriter, usage
 from ..jobs import queue
 from ..providers.base import Capability
 from ..providers.registry import ProviderUnavailable, get_provider
@@ -38,7 +38,8 @@ async def gpu_video(body: GpuVideoRequest) -> dict:
         "scenes": body.scenes, "project_id": body.project_id,
     }, project_id=body.project_id, max_attempts=1)   # one Kaggle run; don't auto-retry a 40-min job
     return {"job": job, "kernel": kaggle_render.kernel_slug(),
-            "note": "Rendering on a free Kaggle GPU — this takes ~30-40 min. Poll the job for progress."}
+            "note": "Rendering on a free Kaggle GPU — this takes ~30-40 min. Poll the job for progress.",
+            "usage_warning": usage.kaggle_warning(), "usage": usage.summary()}
 
 
 @router.post("/generate/from-prompt")
