@@ -95,6 +95,11 @@ export default function VideosPage() {
                 <a href={`${API_BASE}/assets/${a.id}`} download={`${a.id}.mp4`}>
                   <button>⬇ Download</button>
                 </a>
+                {a.project_id && (
+                  <a href={`/projects/${a.project_id}/timeline`}>
+                    <button className="ghost">✏️ Edit clips</button>
+                  </a>
+                )}
                 <button className="ghost" onClick={() => remove(a.id)} disabled={deleting === a.id}>
                   {deleting === a.id ? "deleting…" : "🗑 Delete"}
                 </button>
