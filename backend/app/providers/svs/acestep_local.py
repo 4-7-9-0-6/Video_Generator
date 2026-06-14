@@ -41,8 +41,13 @@ class ACEStepSVSProvider(SVSProvider):
         global _pipe
         if _pipe is None:
             from acestep.pipeline_ace_step import ACEStepPipeline
-            _pipe = ACEStepPipeline(checkpoint_dir=settings.acestep_checkpoint_dir or None,
-                                    dtype="bfloat16")
+            ckpt = settings.acestep_checkpoint_dir or None
+            try:
+                # cpu_offload keeps the weights on CPU between stages, so after the song the GPU
+                # frees up for the video model (ACE-Step + LTX don't co-fit on a 15 GB T4).
+                _pipe = ACEStepPipeline(checkpoint_dir=ckpt, dtype="bfloat16", cpu_offload=True)
+            except TypeError:  # older ACE-Step without the cpu_offload kwarg
+                _pipe = ACEStepPipeline(checkpoint_dir=ckpt, dtype="bfloat16")
         return _pipe
 
     @staticmethod
