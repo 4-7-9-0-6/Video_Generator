@@ -5,9 +5,13 @@
 // play/pause. Pure frontend, local + free, no GPU. Pixi is dynamically imported so it never
 // runs during SSR.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, type Shot } from "@/lib/api";
+import { api, API_BASE, type Shot } from "@/lib/api";
+
+const TRACK_PPS = 80;   // px per second for the editable DOM track
+const MIN_DUR = 0.5;
+const MAX_DUR = 60;     // backend ShotPatch caps duration_s at 60s
 
 const LANES = ["Video", "Voice", "Music", "Subs"] as const;
 const LANE_H = 58;
@@ -33,6 +37,24 @@ export default function TimelinePage() {
   const [playing, setPlaying] = useState(false);
   const [err, setErr] = useState("");
 
+  // editing
+  const [cameras, setCameras] = useState<string[]>(["static"]);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [editCam, setEditCam] = useState("static");
+  const [editDur, setEditDur] = useState(4);
+  const [localDur, setLocalDur] = useState<Record<string, number>>({});   // live width while trimming
+  const dragRef = useRef<{ id: string; startX: number; startDur: number } | null>(null);
+  const dndIdx = useRef<number | null>(null);
+
+  const reload = useCallback(async () => {
+    const s = await api.listShots(id);
+    setShots(s);
+    setLocalDur({});
+    return s;
+  }, [id]);
+
   useEffect(() => {
     Promise.all([api.listShots(id), api.listCharacters(id)])
       .then(([s, c]) => {
@@ -40,7 +62,14 @@ export default function TimelinePage() {
         setCharMap(Object.fromEntries(c.map((x) => [x.id, x.name])));
       })
       .catch((e) => setErr(String(e)));
+    api.motionPresets().then((m) => setCameras(Object.keys(m))).catch(() => {});
+    api.listAssets("video", id).then((v) => { if (v[0]) setVideoUrl(`${API_BASE}/assets/${v[0].id}`); }).catch(() => {});
   }, [id]);
+
+  // keep the edit fields synced to the selected clip
+  useEffect(() => {
+    if (sel) { setEditText(sel.text); setEditCam(sel.camera); setEditDur(sel.duration_s); }
+  }, [sel]);
 
   useEffect(() => {
     if (!hostRef.current || shots.length === 0) return;
@@ -244,6 +273,61 @@ export default function TimelinePage() {
     setPlaying(ctl.current.playing);
   }
 
+  // --- editing: reorder (drag or buttons), trim (drag the right edge), edit + re-render ---
+  async function applyOrder(ids: string[]) {
+    try { await api.reorderShots(id, ids); await reload(); }
+    catch (e) { setErr(String(e)); }
+  }
+  function onDrop(toIdx: number) {
+    const from = dndIdx.current; dndIdx.current = null;
+    if (from == null || from === toIdx) return;
+    const ids = shots.map((s) => s.id);
+    const [moved] = ids.splice(from, 1);
+    ids.splice(toIdx, 0, moved);
+    applyOrder(ids);
+  }
+  function moveShot(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= shots.length) return;
+    const ids = shots.map((s) => s.id);
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    applyOrder(ids);
+  }
+  function onTrimDown(e: React.PointerEvent, shot: Shot) {
+    e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { id: shot.id, startX: e.clientX, startDur: shot.duration_s };
+  }
+  function onTrimMove(e: React.PointerEvent) {
+    const d = dragRef.current; if (!d) return;
+    const nd = Math.min(MAX_DUR, Math.max(MIN_DUR, +(d.startDur + (e.clientX - d.startX) / TRACK_PPS).toFixed(2)));
+    setLocalDur((m) => ({ ...m, [d.id]: nd }));
+  }
+  async function onTrimUp() {
+    const d = dragRef.current; if (!d) return;
+    dragRef.current = null;
+    const nd = localDur[d.id];
+    if (nd != null && Math.abs(nd - d.startDur) > 0.05) {
+      try { await api.patchShot(d.id, { duration_s: nd }); await reload(); }
+      catch (e) { setErr(String(e)); }
+    }
+  }
+  async function saveEdit() {
+    if (!sel) return;
+    setBusy(true); setErr("");
+    try {
+      await api.patchShot(sel.id, { text: editText, camera: editCam, duration_s: editDur });
+      await api.renderKeyframe(sel.id, true);   // re-render just this shot's keyframe
+      const s = await reload();
+      setSel(s.find((x) => x.id === sel.id) ?? null);
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+  async function removeShot(shot: Shot) {
+    if (!confirm("Delete this shot?")) return;
+    try { await api.deleteShot(shot.id); setSel(null); await reload(); }
+    catch (e) { setErr(String(e)); }
+  }
+
   return (
     <div>
       <p className="muted"><a href={`/projects/${id}/storyboard`}>← Storyboard</a></p>
@@ -253,6 +337,14 @@ export default function TimelinePage() {
       </div>
       {err && <p className="error">{err}</p>}
       {shots.length === 0 && !err && <p className="muted">No shots yet — plan a script in the Storyboard first.</p>}
+
+      {videoUrl && (
+        <div className="panel" style={{ padding: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Preview (latest export)</h3>
+          <video controls src={videoUrl} style={{ width: "100%", maxWidth: 560, borderRadius: 8, background: "#000" }} />
+          <p className="caption" style={{ textAlign: "left" }}>Re-export from the Storyboard after editing to refresh this.</p>
+        </div>
+      )}
 
       <div className="panel" style={{ padding: 12 }}>
         <div className="row" style={{ marginBottom: 10, alignItems: "center" }}>
@@ -265,14 +357,80 @@ export default function TimelinePage() {
         <div ref={hostRef} style={{ width: "100%", overflow: "hidden", borderRadius: 8 }} />
       </div>
 
+      {/* editable clip track — drag a block to reorder, drag its right edge to trim */}
+      {shots.length > 0 && (
+        <div className="panel" style={{ padding: 12 }}>
+          <div className="spread" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>✂️ Edit clips</h3>
+            <span className="caption">drag a clip to reorder · drag the right edge to trim · click to edit</span>
+          </div>
+          <div style={{ display: "flex", gap: 4, alignItems: "stretch", overflowX: "auto", paddingBottom: 6 }}
+               onPointerMove={onTrimMove} onPointerUp={onTrimUp}>
+            {shots.map((s, i) => {
+              const dur = localDur[s.id] ?? s.duration_s;
+              const isSel = sel?.id === s.id;
+              return (
+                <div key={s.id} draggable
+                     onDragStart={() => { dndIdx.current = i; }}
+                     onDragOver={(e) => e.preventDefault()}
+                     onDrop={() => onDrop(i)}
+                     onClick={() => setSel(s)}
+                     title={s.text}
+                     style={{
+                       position: "relative", flex: "0 0 auto",
+                       width: Math.max(54, dur * TRACK_PPS), height: 60,
+                       background: isSel ? "var(--accent)" : "var(--panel-2)",
+                       border: `1px solid ${isSel ? "var(--accent)" : "var(--border)"}`,
+                       borderRadius: 6, cursor: "grab", overflow: "hidden", userSelect: "none",
+                     }}>
+                  {s.keyframe_id && (
+                    <img src={api.assetUrl(s.keyframe_id)} alt="" draggable={false}
+                         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.55 }} />
+                  )}
+                  <div style={{ position: "relative", padding: "4px 6px", fontSize: 11, lineHeight: 1.2,
+                                textShadow: "0 1px 2px #000", color: "#fff" }}>
+                    <b>{i + 1}</b> · {dur.toFixed(1)}s
+                    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.text}</div>
+                  </div>
+                  {/* trim handle */}
+                  <div onPointerDown={(e) => onTrimDown(e, s)}
+                       title="drag to trim duration"
+                       style={{ position: "absolute", top: 0, right: 0, width: 8, height: "100%",
+                                cursor: "ew-resize", background: "rgba(255,255,255,.25)" }} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {sel && (
         <div className="panel">
           <div className="spread">
-            <strong>Shot {sel.idx + 1}</strong>
-            <span className="badge">{sel.duration_s}s · {sel.camera}</span>
+            <strong>Shot {shots.findIndex((s) => s.id === sel.id) + 1}</strong>
+            <div className="row" style={{ gap: 6 }}>
+              <button className="ghost" onClick={() => moveShot(shots.findIndex((s) => s.id === sel.id), -1)} style={{ padding: "4px 10px" }}>◀ move</button>
+              <button className="ghost" onClick={() => moveShot(shots.findIndex((s) => s.id === sel.id), 1)} style={{ padding: "4px 10px" }}>move ▶</button>
+              <button className="ghost" onClick={() => removeShot(sel)} style={{ padding: "4px 10px" }}>🗑 delete</button>
+            </div>
           </div>
-          <p style={{ margin: "6px 0" }}>{sel.text}</p>
-          <div className="pill-list">
+          <label>Line / text</label>
+          <textarea value={editText} onChange={(e) => setEditText(e.target.value)} />
+          <div className="row" style={{ marginTop: 8, gap: 14, alignItems: "end", flexWrap: "wrap" }}>
+            <div>
+              <label>Camera</label>
+              <select value={editCam} onChange={(e) => setEditCam(e.target.value)} style={{ width: "auto" }}>
+                {cameras.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>Duration (s)</label>
+              <input type="number" min={MIN_DUR} max={MAX_DUR} step={0.5} value={editDur}
+                     onChange={(e) => setEditDur(Math.min(MAX_DUR, Math.max(MIN_DUR, Number(e.target.value))))} style={{ width: 90 }} />
+            </div>
+            <button onClick={saveEdit} disabled={busy}>{busy ? "saving…" : "💾 Save & re-render shot"}</button>
+          </div>
+          <div className="pill-list" style={{ marginTop: 8 }}>
             {sel.characters.map((cid) => <span key={cid} className="badge ok">{charMap[cid] ?? cid}</span>)}
             {sel.background && <span className="badge">{sel.background}</span>}
           </div>
