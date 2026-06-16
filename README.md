@@ -45,6 +45,13 @@ Providers that can't run report *why* and how to enable them — the app never h
 
 ## Quick start
 
+### Run it — one command
+Once set up (steps below), start the **whole app** (backend + frontend) with:
+```
+python run.py
+```
+It frees the ports, launches both servers, opens http://localhost:3000, and **Ctrl+C stops both cleanly** (no orphaned processes). Use `--no-browser` to skip opening the browser, or `--backend-port N` to change the API port.
+
 ### 1. Prerequisites
 - **Python 3.12 recommended** (3.14 works for the core API, but some ML wheels may not exist yet).
 - **Node 20+** (for the future Next.js frontend).
