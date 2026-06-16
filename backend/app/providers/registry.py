@@ -23,6 +23,7 @@ _FACTORIES: dict[str, dict[str, Callable[[], BaseProvider]]] = {
     },
     Capability.VIDEO.value: {
         "ffmpeg_kenburns": lambda: _imp("video.ffmpeg_kenburns", "FFmpegKenBurnsVideoProvider"),
+        "depth_parallax": lambda: _imp("video.depth_parallax", "DepthParallaxVideoProvider"),
         "ltx_local": lambda: _imp("video.ltx_local", "LTXLocalVideoProvider"),
         "higgsfield": lambda: _imp("video.higgsfield", "HiggsfieldVideoProvider"),
     },

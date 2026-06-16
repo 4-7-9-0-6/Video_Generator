@@ -98,6 +98,13 @@ class Settings:
 
     whisper_model: str = field(default_factory=lambda: _env("WHISPER_MODEL", "base"))
 
+    # depth-parallax video (local 2.5D motion, ONNX depth model — no torch/GPU needed)
+    depth_model: Path = field(default_factory=lambda: _resolve(_env("DEPTH_MODEL", "./models/depth/model-small.onnx")))
+    depth_model_url: str = field(default_factory=lambda: _env("DEPTH_MODEL_URL", "https://github.com/isl-org/MiDaS/releases/download/v2_1/model-small.onnx"))
+    depth_parallax_amplitude: float = field(default_factory=lambda: float(_env("DEPTH_PARALLAX_AMPLITUDE", "0.022")))  # max near-pixel shift (frac of width)
+    depth_parallax_zoom: float = field(default_factory=lambda: float(_env("DEPTH_PARALLAX_ZOOM", "0.06")))  # overscan to hide edges
+    depth_max_side: int = field(default_factory=lambda: int(_env("DEPTH_MAX_SIDE", "720")))  # cap warp res (compose upscales)
+
     # local SD-Turbo (stable-diffusion.cpp) — offline CPU image generation
     sdcpp_steps: int = field(default_factory=lambda: int(_env("SDCPP_STEPS", "4")))
     sdcpp_cfg: float = field(default_factory=lambda: float(_env("SDCPP_CFG", "1.0")))

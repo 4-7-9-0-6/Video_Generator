@@ -7,3 +7,5 @@ python-multipart>=0.0.9
 Pillow>=10.3
 numpy>=1.26
 kaggle>=1.6          # drive a free Kaggle GPU for the sung+animated render (optional; key-gated)
+onnxruntime>=1.17    # local depth model for the depth_parallax video provider (CPU, no torch)
+opencv-python-headless>=4.9   # fast remap for depth-parallax (numpy fallback if absent)
