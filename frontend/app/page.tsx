@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, API_BASE, type Job, type ProviderProbe, type Style } from "@/lib/api";
+import { api, API_BASE, jobErrorText, type Job, type ProviderProbe, type Style } from "@/lib/api";
+import { JobError } from "@/components/JobError";
 
 export default function Home() {
   const router = useRouter();
@@ -73,7 +74,7 @@ export default function Home() {
         const assetId = cur.result?.asset_id as string | undefined;
         if (assetId) setGpuVideoId(assetId);
       } else {
-        setErr(`GPU render ${cur.status}: ${cur.error || cur.message}`);
+        setErr(`GPU render ${cur.status}: ${jobErrorText(cur)}`);
       }
     } catch (e) {
       setErr(String(e));
@@ -187,6 +188,7 @@ export default function Home() {
             </p>
           </div>
         )}
+        <JobError job={gpuJob} title="GPU render failed" />
         {gpuVideoId && (
           <div style={{ marginTop: 14 }}>
             <video controls style={{ width: "100%", borderRadius: 8, background: "#000" }} src={`${API_BASE}/assets/${gpuVideoId}`} />

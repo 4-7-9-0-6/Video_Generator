@@ -65,6 +65,13 @@ export interface Job {
   payload: Record<string, unknown>;
   result: Record<string, unknown>;
   error: string;
+  friendly_error?: string;
+}
+
+/** A user-friendly message for a failed job (falls back to the raw error). */
+export function jobErrorText(job: Job | null | undefined): string {
+  if (!job) return "";
+  return job.friendly_error || job.error || "The job failed. Please try again.";
 }
 
 export interface Asset {

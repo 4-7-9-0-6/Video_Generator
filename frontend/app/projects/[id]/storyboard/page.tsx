@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, API_BASE, type Character, type Job, type Shot } from "@/lib/api";
+import { JobError } from "@/components/JobError";
 
 export default function StoryboardPage() {
   const { id } = useParams<{ id: string }>();
@@ -337,7 +338,10 @@ export default function StoryboardPage() {
               <span style={{ width: `${Math.round(exportJob.progress * 100)}%` }} />
             </div>
           )}
-          {exportJob && <div className="caption" style={{ textAlign: "left" }}>{exportJob.message}</div>}
+          {exportJob && exportJob.status !== "failed" && (
+            <div className="caption" style={{ textAlign: "left" }}>{exportJob.message}</div>
+          )}
+          <JobError job={exportJob} title="Export failed" />
 
           {episodeUrl && (
             <div style={{ marginTop: 14 }}>
@@ -375,6 +379,7 @@ export default function StoryboardPage() {
             <div className="caption" style={{ textAlign: "left" }}>{thumbJob.message}</div>
           </>
         )}
+        <JobError job={thumbJob} title="Thumbnails failed" />
         {thumbs.length > 0 && (
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12, marginTop: 14 }}>
             {thumbs.map((t) => (

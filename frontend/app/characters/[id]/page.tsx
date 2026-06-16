@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, type Character, type Job } from "@/lib/api";
+import { JobError } from "@/components/JobError";
 
 const TURNAROUND_LABELS = ["front", "three_quarter", "side", "back"];
 
@@ -156,9 +157,7 @@ export default function CharacterPage() {
               <div className="progress" style={{ marginTop: 10 }}>
                 <span style={{ width: `${Math.round(currentJob.progress * 100)}%` }} />
               </div>
-              {currentJob.status === "failed" && currentJob.error && (
-                <p className="error" style={{ marginTop: 8 }}>{currentJob.error}</p>
-              )}
+              <JobError job={currentJob} title="Generation failed" />
             </div>
           )}
 
