@@ -122,6 +122,23 @@ async def _run(args: list[str], cwd: Path) -> None:
         raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err[-900:]}")
 
 
+def _probe_duration(path: Path) -> float:
+    """Actual duration (seconds) of an encoded clip via ffprobe, 0.0 if unreadable. Used so the
+    timeline / subtitle timings / reported duration reflect what was REALLY produced — e.g. a
+    lip-sync clip may not come out at exactly the requested length."""
+    ff = ffmpeg_exe()
+    if not ff:
+        return 0.0
+    ffprobe = str(Path(ff).with_name("ffprobe" + Path(ff).suffix))
+    try:
+        out = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
+                              "-of", "default=nw=1:nk=1", str(path)],
+                             capture_output=True, text=True).stdout.strip()
+        return float(out) if out else 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]], *,
                            voice: bool = True, sing: bool = False, subtitles: bool = True,
                            word_subtitles: bool = True, music: bool = False,
@@ -216,10 +233,11 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                 talk = await lipsync_fx.render_talking_clip(
                     framed, res.data, duration_s=seg_dur, fps=fps, width=w, height=h)
                 (tmp / f"seg{i}.mp4").write_bytes(talk)
+                adur = _probe_duration(tmp / f"seg{i}.mp4") or seg_dur   # lip-sync clip length varies
                 seg_names.append(f"seg{i}.mp4")
-                seg_durs.append(seg_dur)
-                srt_entries.append((shot.get("text", ""), timeline, timeline + seg_dur))
-                timeline += seg_dur
+                seg_durs.append(adur)
+                srt_entries.append((shot.get("text", ""), timeline, timeline + adur))
+                timeline += adur
                 continue
 
             # video source: a real animated clip (GPU) or a Ken Burns move on the still (CPU)
@@ -252,10 +270,11 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                         "-filter_complex", vchain,
                         "-map", "[v]", "-map", "1:a", *common_tail]
             await _run(args, tmp)
+            adur = _probe_duration(tmp / f"seg{i}.mp4") or seg_dur   # honor the real encoded length
             seg_names.append(f"seg{i}.mp4")
-            seg_durs.append(seg_dur)
-            srt_entries.append((shot.get("text", ""), timeline, timeline + seg_dur))
-            timeline += seg_dur
+            seg_durs.append(adur)
+            srt_entries.append((shot.get("text", ""), timeline, timeline + adur))
+            timeline += adur
 
         # stitch: hard-cut concat (fast, lossless copy) OR xfade transitions (re-encode, overlaps
         # clips by `td`, which compresses the timeline — subtitles/music are shifted to match).
@@ -343,6 +362,9 @@ async def assemble_episode(project: dict[str, Any], shots: list[dict[str, Any]],
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "copy", "final.mp4"], tmp)
             current = "final.mp4"
 
+        # authoritative reported duration = the actual final file (matches what plays), not the
+        # estimate; falls back to the estimate if ffprobe is unavailable.
+        final_total = _probe_duration(tmp / current) or final_total
         data = (tmp / current).read_bytes()
         srt_bytes = srt_text.encode("utf-8") if srt_text else b""
 

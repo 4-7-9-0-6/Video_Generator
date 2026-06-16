@@ -130,6 +130,20 @@ def test_grade_produces_valid_mp4(mock_image):
 
 
 @pytest.mark.skipif(not (has_ffmpeg() and _tts_ok()), reason="needs ffmpeg + a TTS provider")
+def test_reported_duration_matches_file_lipsync_transition(mock_image):
+    """Regression: lip-sync clips don't come out at the requested length, so the timeline/reported
+    duration used to drift (e.g. meta 28.1 s vs a 20.5 s file). The reported duration must now
+    match the actual encoded file."""
+    project, shots = _project_with_keyframes(2)
+    res = asyncio.run(compose.assemble_episode(
+        project, shots, voice=True, lipsync=True, subtitles=False,
+        transition="fade", preset="project_native"))
+    asset = models.get("assets", res["asset_id"])
+    actual = compose._probe_duration(settings.assets_dir() / asset["path"])
+    assert actual > 0 and abs(res["duration_s"] - actual) < 0.35    # within rounding/xfade edges
+
+
+@pytest.mark.skipif(not (has_ffmpeg() and _tts_ok()), reason="needs ffmpeg + a TTS provider")
 def test_full_combo_with_lipsync_makes_valid_mp4(mock_image):
     """The user's exact scenario: lip-sync + music + grade + transition + word subtitles together
     -> a valid MP4 with BOTH a video and an audio stream."""
